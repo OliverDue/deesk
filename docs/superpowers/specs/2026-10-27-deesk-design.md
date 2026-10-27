@@ -10,7 +10,7 @@ Single user, personal use. No accounts, sync, or collaboration. Data stays on th
 
 - **Shell:** Tauri 2 (native app, real filesystem access, dock icon).
 - **UI:** React + TypeScript + Vite.
-- **Canvas:** tldraw SDK. Excalidraw is not used, embedded or otherwise. tldraw already provides boxes, ellipses, arrows bound to shapes, freehand, images, selection and undo/redo; its "draw" style stands in for the hand-drawn look. Licence terms are to be checked at spec-to-plan time, as they have changed between tldraw versions. Personal use is the only use case.
+- **Canvas:** tldraw SDK. Excalidraw is not used, embedded or otherwise. tldraw already provides boxes, ellipses, arrows bound to shapes, freehand, images, selection and undo/redo; its "draw" style stands in for the hand-drawn look. Licence (checked 2026-10-27): tldraw 4.x requires a licence key for production use; development environments need none. A packaged desktop app most likely counts as production. A hobby licence exists for non-commercial projects (watermark kept, discretionary approval). The user will request a hobby key before daily use of the packaged app. If it is declined, the canvas layer is replaced (see Architecture: thin boundary).
 - **Rich text / checklists:** TipTap (ProseMirror).
 - **State:** tldraw's own store plus Zustand for app-level state.
 - **Persistence:** JSON snapshot plus an assets folder.
@@ -26,7 +26,7 @@ Single user, personal use. No accounts, sync, or collaboration. Data stays on th
 
 - Infinite pan and zoom.
 - **The app never changes the view on its own.** Only the user moves the camera. The one exception is the zoom spring below.
-- **Zoom spring:** zoom has a soft limit. If the user stays past it, zoom eases back toward a slightly more zoomed-out level with an animated transition, not a snap. Applies at both the zoomed-in and zoomed-out ends (to be confirmed by the user). A looping, self-similar "desk inside the desk" zoom is explicitly out of scope; it may be added later.
+- **Zoom spring:** zoom has a soft limit. If the user stays past it, zoom eases back toward a slightly more zoomed-out level with an animated transition, not a snap. Applies at both the zoomed-in and zoomed-out ends (confirmed by the user). A looping, self-similar "desk inside the desk" zoom is explicitly out of scope; it may be added later.
 - Snap/align guides, minimap, undo/redo, command palette (Cmd+K) and keyboard shortcuts.
 - Light and dark themes.
 - Search across papers.
@@ -74,5 +74,4 @@ Multiple desks, sync, collaboration, accounts, the looping self-similar zoom, te
 
 ## Open items
 
-- Confirm the zoom spring applies at both zoom ends.
-- Check the current tldraw licence terms before planning.
+- Request a tldraw hobby licence key before using the packaged app. Development needs no key.
