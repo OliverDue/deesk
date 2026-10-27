@@ -401,10 +401,10 @@ Each task below gets step-level TDD detail added under it (use `superpowers:writ
 
 **Goal:** the desk survives quit and relaunch, and a crash or a corrupt file cannot destroy it.
 
-**Where it is saved:** `~/Library/Application Support/com.deesk.app/` (Tauri's `AppData` folder for the app identifier, so `npm run tauri dev` and the packaged app share the same desk). Files: `desk.json` (current), `desk.backup.json` (previous good version), `desk.json.tmp` (only during a write), and `desk.unreadable-<timestamp>.json` (a damaged file moved aside, never deleted).
+**Where it is saved:** `~/Library/Application Support/com.deesk.app/` (Tauri's `AppData` folder for the app identifier, so `npm run tauri dev` and the packaged app share the same desk). Files: `session.json` (last view), `desk.json` (current), `desk.backup.json` (previous good version), `desk.json.tmp` (only during a write), and `desk.unreadable-<timestamp>.json` (a damaged file moved aside, never deleted).
 
 **Design decisions**
-- Only tldraw's `document` part of the snapshot is saved (shapes, pages). Camera and selection are not (open question for the user: restore the last view on launch?).
+- tldraw's `document` part of the snapshot (shapes, pages) is saved in `desk.json`. The `session` part (camera, selection) is saved separately in `session.json`, so the desk reopens at the user's last view (user decision, 2026-10-27). Restoring the user's own last view does not break the rule that the app never moves the camera on its own.
 - Pure logic (file format, load/save/recovery, debounce) is separated from Tauri so Vitest can test it with a fake in-memory file system. Only `tauriFs.ts` touches the real file system.
 - Saving starts only after loading has finished, so an empty desk can never overwrite a real one.
 - The backup is only refreshed from a `desk.json` that parses. A corrupt file is never copied over a good backup.
@@ -413,6 +413,7 @@ Each task below gets step-level TDD detail added under it (use `superpowers:writ
 - Create: `src/persistence/deskFile.ts`, `src/persistence/deskFile.test.ts`
 - Create: `src/persistence/deskStore.ts`, `src/persistence/deskStore.test.ts`
 - Create: `src/persistence/autosave.ts`, `src/persistence/autosave.test.ts`
+- Create: `src/persistence/sessionStore.ts`, `src/persistence/sessionStore.test.ts`
 - Create: `src/persistence/tauriFs.ts`, `src/persistence/useDeskStore.ts`
 - Modify: `src/Desk.tsx`, `src-tauri/Cargo.toml`, `src-tauri/src/lib.rs`, `src-tauri/capabilities/default.json`, `package.json` (all via the fs plugin install in Step 1)
 
@@ -421,6 +422,7 @@ Each task below gets step-level TDD detail added under it (use `superpowers:writ
 - Produces:
   - `deskFile.ts`: `serializeDesk(document: unknown): string`; `parseDesk(text: string): ParseResult` where `ParseResult = { ok: true; document: unknown } | { ok: false; reason: "invalid" | "unsupported-version" }`.
   - `deskStore.ts`: `interface FileOps { read(path: string): Promise<string | null>; write(path: string, text: string): Promise<void>; rename(from: string, to: string): Promise<void>; copy(from: string, to: string): Promise<void> }`; `loadDesk(fs: FileOps, now?: () => number): Promise<LoadResult>` where `LoadResult = { kind: "empty" } | { kind: "ok"; document: unknown } | { kind: "recovered"; document: unknown } | { kind: "unreadable" }`; `saveDesk(fs: FileOps, document: unknown): Promise<void>`; constants `DESK_FILE`, `TMP_FILE`, `BACKUP_FILE`.
+  - `sessionStore.ts`: `loadSession(fs: FileOps): Promise<unknown | null>` (null when missing or corrupt, never throws); `saveSession(fs: FileOps, session: unknown): Promise<void>` (temp file then rename); constants `SESSION_FILE`, `SESSION_TMP_FILE`.
   - `autosave.ts`: `createAutosaver(save: () => Promise<void>, delayMs: number, onError?: (e: unknown) => void): Autosaver` where `Autosaver = { schedule(): void; flush(): Promise<void>; cancel(): void }`.
   - `useDeskStore.ts`: `useDeskStore(): TLStore | null` (null while loading).
 
@@ -818,6 +820,84 @@ export function createAutosaver(
 
 Run: `npm test`. Expected: PASS. Commit: `git add src/persistence/autosave.* && git commit -m "feat: debounced autosaver"`.
 
+- [ ] **Step 8a: Remember the view (camera) in its own small file**
+
+Decision (user, 2026-10-27): reopening restores the last view (zoom and position). It lives in `session.json`, separate from `desk.json`, so panning never rewrites the desk and a damaged view file can never harm it: a bad or missing `session.json` just means the default view.
+
+Create `src/persistence/sessionStore.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { SESSION_FILE, SESSION_TMP_FILE, loadSession, saveSession } from "./sessionStore";
+import type { FileOps } from "./deskStore";
+
+function memoryFs(initial: Record<string, string> = {}) {
+  const files = new Map<string, string>(Object.entries(initial));
+  const fs: FileOps = {
+    async read(path) {
+      return files.has(path) ? (files.get(path) as string) : null;
+    },
+    async write(path, text) {
+      files.set(path, text);
+    },
+    async rename(from, to) {
+      files.set(to, files.get(from) as string);
+      files.delete(from);
+    },
+    async copy(from, to) {
+      files.set(to, files.get(from) as string);
+    },
+  };
+  return { fs, files };
+}
+
+describe("sessionStore", () => {
+  it("returns null when there is no session file", async () => {
+    const { fs } = memoryFs();
+    expect(await loadSession(fs)).toBeNull();
+  });
+
+  it("round-trips a session", async () => {
+    const { fs, files } = memoryFs();
+    const session = { camera: { x: 10, y: -20, z: 0.5 } };
+    await saveSession(fs, session);
+    expect(await loadSession(fs)).toEqual(session);
+    expect(files.has(SESSION_TMP_FILE)).toBe(false);
+  });
+
+  it("returns null, without throwing, when the file is corrupt", async () => {
+    const { fs } = memoryFs({ [SESSION_FILE]: "garbage {" });
+    expect(await loadSession(fs)).toBeNull();
+  });
+});
+```
+
+Run `npm test` (expected FAIL: `./sessionStore` not found). Create `src/persistence/sessionStore.ts`:
+
+```ts
+import type { FileOps } from "./deskStore";
+
+export const SESSION_FILE = "session.json";
+export const SESSION_TMP_FILE = "session.json.tmp";
+
+export async function loadSession(fs: FileOps): Promise<unknown | null> {
+  const text = await fs.read(SESSION_FILE);
+  if (text === null) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSession(fs: FileOps, session: unknown): Promise<void> {
+  await fs.write(SESSION_TMP_FILE, JSON.stringify(session));
+  await fs.rename(SESSION_TMP_FILE, SESSION_FILE);
+}
+```
+
+Run `npm test`. Expected: PASS. Commit: `git add src/persistence/sessionStore.* && git commit -m "feat: save and load the view in its own file"`.
+
 - [ ] **Step 9: Real file operations on the Tauri side**
 
 Create `src/persistence/tauriFs.ts`. Before relying on it, open the installed types (`node_modules/@tauri-apps/plugin-fs/dist-js/index.d.ts`) and confirm the option names for `readTextFile`, `writeTextFile`, `rename`, `copyFile`, `exists` and `mkdir`; adjust this file if they differ.
@@ -870,9 +950,11 @@ import { createTLStore, getSnapshot, loadSnapshot, type TLStore } from "tldraw";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createAutosaver } from "./autosave";
 import { loadDesk, saveDesk } from "./deskStore";
+import { loadSession, saveSession } from "./sessionStore";
 import { ensureDataDir, tauriFileOps } from "./tauriFs";
 
 const SAVE_DELAY_MS = 500;
+const SESSION_SAVE_DELAY_MS = 1000;
 
 export function useDeskStore(): TLStore | null {
   const [store, setStore] = useState<TLStore | null>(null);
@@ -884,6 +966,7 @@ export function useDeskStore(): TLStore | null {
     (async () => {
       await ensureDataDir();
       const result = await loadDesk(tauriFileOps);
+      const session = await loadSession(tauriFileOps);
       if (cancelled) return;
 
       if (result.kind === "recovered") {
@@ -894,7 +977,10 @@ export function useDeskStore(): TLStore | null {
 
       const next = createTLStore();
       if (result.kind === "ok" || result.kind === "recovered") {
-        loadSnapshot(next, { document: result.document as never });
+        loadSnapshot(next, {
+          document: result.document as never,
+          ...(session ? { session: session as never } : {}),
+        });
       }
 
       // Saving starts only now, after loading finished.
@@ -904,14 +990,26 @@ export function useDeskStore(): TLStore | null {
         (e) => console.error("Deesk: save failed", e),
       );
       const unlisten = next.listen(() => saver.schedule(), { source: "user", scope: "document" });
+
+      // The view (camera, selection) is saved separately, a little less eagerly.
+      const sessionSaver = createAutosaver(
+        () => saveSession(tauriFileOps, getSnapshot(next).session),
+        SESSION_SAVE_DELAY_MS,
+        (e) => console.error("Deesk: saving the view failed", e),
+      );
+      const unlistenSession = next.listen(() => sessionSaver.schedule(), { scope: "session" });
+
       const unlistenClose = await getCurrentWindow().onCloseRequested(async () => {
         await saver.flush();
+        await sessionSaver.flush();
       });
 
       stop = () => {
         unlisten();
+        unlistenSession();
         unlistenClose();
         saver.cancel();
+        sessionSaver.cancel();
       };
       if (cancelled) stop();
       else setStore(next);
@@ -927,7 +1025,7 @@ export function useDeskStore(): TLStore | null {
 }
 ```
 
-If TypeScript rejects the `as never` cast or the `loadSnapshot` argument shape, follow the installed tldraw types and note the fix in Findings.
+If TypeScript rejects the `as never` casts or the `loadSnapshot` argument shape (for example if `session` cannot be given without `document`), follow the installed tldraw types and note the fix in Findings. A desk with no saved shapes but a saved view is an odd state; if it behaves badly, only restore the view when a desk was loaded, as written above.
 
 - [ ] **Step 11: Use it in the Desk**
 
@@ -959,11 +1057,13 @@ Give the user this list and wait for their answer, step by step:
 1. First launch: the desk opens empty and cream, no errors. (If the saved folder already exists from an earlier run, that is fine.)
 2. Draw a rectangle, an arrow and some freehand. Wait one second. Quit with Cmd+Q. Reopen: everything is still there.
 3. Move a shape. Close the window with the red button. Reopen: the shape is where you left it.
+3b. Pan and zoom to a different spot (not the default view), wait two seconds, close and reopen: the view is where you left it, not reset.
 4. Draw something, quit, reopen, draw something else, quit, reopen. Both drawings are there. Then check the folder: `ls ~/Library/Application\ Support/com.deesk.app/` shows `desk.json` and `desk.backup.json`.
 5. Damage test: quit Deesk, then run `echo garbage > ~/Library/Application\ Support/com.deesk.app/desk.json`. Reopen: the desk comes back from the backup (it may be one change older). Run `ls` on the folder again: there is now a `desk.unreadable-<number>.json` file holding the garbage.
+5b. Damage the view file the same way (`echo garbage > ~/Library/Application\ Support/com.deesk.app/session.json`): reopen, the desk is intact and simply opens at the default view.
 6. Look at the saved desk's size in Finder, and tell the agent roughly how big it is, in case images later make it grow.
 
-Known limit to tell the user: the autosave waits 0.5 seconds after the last change, so quitting with Cmd+Q within half a second of an edit can lose that last edit. Closing the window with the red button saves first.
+Known limit to tell the user: the autosave waits 0.5 seconds after the last change (and 1 second for the view), so quitting with Cmd+Q within half a second of an edit can lose that last edit. Closing the window with the red button saves first.
 
 - [ ] **Step 13: Commit and ask for confirmation**
 
