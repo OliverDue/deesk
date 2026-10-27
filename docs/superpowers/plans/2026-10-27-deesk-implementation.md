@@ -426,15 +426,15 @@ Each task below gets step-level TDD detail added under it (use `superpowers:writ
   - `autosave.ts`: `createAutosaver(save: () => Promise<void>, delayMs: number, onError?: (e: unknown) => void): Autosaver` where `Autosaver = { schedule(): void; flush(): Promise<void>; cancel(): void }`.
   - `useDeskStore.ts`: `useDeskStore(): TLStore | null` (null while loading).
 
-- [ ] **Step 1: Install the Tauri file-system plugin (user runs the install)**
+- [x] **Step 1: Install the Tauri file-system plugin (user runs the install)**
 
 Ask the user to run, in the project folder: `! npm run tauri add fs`. It adds the npm package `@tauri-apps/plugin-fs`, the Rust crate `tauri-plugin-fs`, registers the plugin in `src-tauri/src/lib.rs`, and adds a permission to `src-tauri/capabilities/default.json`. Then check the three edited files by eye (`git diff`) and confirm `npm run build` still passes.
 
-- [ ] **Step 2: Allow only the app data folder**
+- [x] **Step 2: Allow only the app data folder**
 
 In `src-tauri/capabilities/default.json`, replace the broad default `fs:default` (if the install added it) with the exact permissions used, scoped to `$APPDATA` only: `fs:allow-read-text-file`, `fs:allow-write-text-file`, `fs:allow-rename`, `fs:allow-copy-file`, `fs:allow-exists`, `fs:allow-mkdir`, and a scope entry allowing `$APPDATA` and `$APPDATA/**`. Look the exact permission identifiers up in the installed plugin's docs or in `src-tauri/gen/schemas` after a build, since names must match exactly. Do not allow any other folder.
 
-- [ ] **Step 3: Write the failing tests for the file format**
+- [x] **Step 3: Write the failing tests for the file format**
 
 Create `src/persistence/deskFile.test.ts`:
 
@@ -468,7 +468,7 @@ describe("deskFile", () => {
 });
 ```
 
-- [ ] **Step 4: Run to see it fail, then implement**
+- [x] **Step 4: Run to see it fail, then implement**
 
 Run: `npm test` (expected FAIL: `./deskFile` not found). Create `src/persistence/deskFile.ts`:
 
@@ -506,7 +506,7 @@ export function parseDesk(text: string): ParseResult {
 
 Run: `npm test`. Expected: PASS. Commit: `git add src/persistence/deskFile.* && git commit -m "feat: desk file format"`.
 
-- [ ] **Step 5: Write the failing tests for load, save and recovery**
+- [x] **Step 5: Write the failing tests for load, save and recovery**
 
 Create `src/persistence/deskStore.test.ts`:
 
@@ -601,7 +601,7 @@ describe("deskStore", () => {
 });
 ```
 
-- [ ] **Step 6: Run to see it fail, then implement**
+- [x] **Step 6: Run to see it fail, then implement**
 
 Run: `npm test` (expected FAIL: `./deskStore` not found). Create `src/persistence/deskStore.ts`:
 
@@ -664,7 +664,7 @@ export async function saveDesk(fs: FileOps, document: unknown): Promise<void> {
 
 Run: `npm test`. Expected: PASS. Commit: `git add src/persistence/deskStore.* && git commit -m "feat: atomic desk save and recovering load"`.
 
-- [ ] **Step 7: Write the failing tests for the autosaver**
+- [x] **Step 7: Write the failing tests for the autosaver**
 
 Create `src/persistence/autosave.test.ts`:
 
@@ -749,7 +749,7 @@ describe("autosaver", () => {
 });
 ```
 
-- [ ] **Step 8: Run to see it fail, then implement**
+- [x] **Step 8: Run to see it fail, then implement**
 
 Run: `npm test` (expected FAIL: `./autosave` not found). Create `src/persistence/autosave.ts`:
 
@@ -820,7 +820,7 @@ export function createAutosaver(
 
 Run: `npm test`. Expected: PASS. Commit: `git add src/persistence/autosave.* && git commit -m "feat: debounced autosaver"`.
 
-- [ ] **Step 8a: Remember the view (camera) in its own small file**
+- [x] **Step 8a: Remember the view (camera) in its own small file**
 
 Decision (user, 2026-10-27): reopening restores the last view (zoom and position). It lives in `session.json`, separate from `desk.json`, so panning never rewrites the desk and a damaged view file can never harm it: a bad or missing `session.json` just means the default view.
 
@@ -898,7 +898,7 @@ export async function saveSession(fs: FileOps, session: unknown): Promise<void> 
 
 Run `npm test`. Expected: PASS. Commit: `git add src/persistence/sessionStore.* && git commit -m "feat: save and load the view in its own file"`.
 
-- [ ] **Step 9: Real file operations on the Tauri side**
+- [x] **Step 9: Real file operations on the Tauri side**
 
 Create `src/persistence/tauriFs.ts`. Before relying on it, open the installed types (`node_modules/@tauri-apps/plugin-fs/dist-js/index.d.ts`) and confirm the option names for `readTextFile`, `writeTextFile`, `rename`, `copyFile`, `exists` and `mkdir`; adjust this file if they differ.
 
@@ -940,7 +940,7 @@ export async function ensureDataDir(): Promise<void> {
 
 Run `npm run build`. Expected: type-checks. If `mkdir("")` is rejected at runtime in Step 12, create the folder with the path `"."` or check `exists("", base)` first; note what worked in Findings.
 
-- [ ] **Step 10: Hook the store into the editor**
+- [x] **Step 10: Hook the store into the editor**
 
 Create `src/persistence/useDeskStore.ts`:
 
@@ -1027,7 +1027,7 @@ export function useDeskStore(): TLStore | null {
 
 If TypeScript rejects the `as never` casts or the `loadSnapshot` argument shape (for example if `session` cannot be given without `document`), follow the installed tldraw types and note the fix in Findings. A desk with no saved shapes but a saved view is an odd state; if it behaves badly, only restore the view when a desk was loaded, as written above.
 
-- [ ] **Step 11: Use it in the Desk**
+- [x] **Step 11: Use it in the Desk**
 
 Replace `src/Desk.tsx`:
 
@@ -1051,7 +1051,7 @@ export function Desk() {
 
 Run `npm run build && npm test`. Expected: both pass.
 
-- [ ] **Step 12: User verifies by hand (agent starts `npm run tauri dev`)**
+- [x] **Step 12: User verifies by hand (agent starts `npm run tauri dev`)**
 
 Give the user this list and wait for their answer, step by step:
 1. First launch: the desk opens empty and cream, no errors. (If the saved folder already exists from an earlier run, that is fine.)
@@ -1065,7 +1065,7 @@ Give the user this list and wait for their answer, step by step:
 
 Known limit to tell the user: the autosave waits 0.5 seconds after the last change (and 1 second for the view), so quitting with Cmd+Q within half a second of an edit can lose that last edit. Closing the window with the red button saves first.
 
-- [ ] **Step 13: Commit and ask for confirmation**
+- [x] **Step 13: Commit and ask for confirmation**
 
 ```bash
 git add -A
@@ -1168,3 +1168,11 @@ Then report to the user what was verified and ask for explicit confirmation that
 - **Repo is on GitHub (2026-10-27), pushed by the user** at https://github.com/OliverDue/deesk (personal account OliverDue; commits authored as lio@live.dk via repo-local git config). The agent never uses gh or pushes.
 - **Task 4 verified with a key (2026-10-27):** with a 14-day tldraw trial key in `.env.local` (user-created; the agent never reads that file), the rebuilt release `Deesk.app` shows the canvas and tools, drawing works, and no watermark appears. The trial expires around 2026-11-10; after that the packaged app goes blank again until a longer-lived key is in `.env.local` and the app is rebuilt. Installing into /Applications and the dock was skipped on purpose for now (Task 4 steps 5 is deferred by the user).
 - **Process agreed with the user:** at the end of every task the agent states what was verified and waits for the user's explicit confirmation before starting the next task.
+- **Task 5 done (2026-10-27), all hand checks passed by the user.** Autosave, atomic writes, restore of desk and view, backup recovery, damaged-file quarantine and view self-healing all verified. 27 automated tests pass. Deviations from the Task 5 text above, already applied in code:
+  - `fs:default` was replaced by the six exact fs permissions plus `fs:scope-appdata` and `fs:scope-appdata-recursive` (the default only grants read, across five folders).
+  - **The close handler needs `core:window:allow-destroy`** in `src-tauri/capabilities/default.json`. Without it the red close button silently does nothing (console: "window.destroy not allowed"). Only a real-window test finds this.
+  - `ensureDataDir` uses the absolute `appDataDir()` path, not `mkdir("")`.
+  - `loadDesk` now writes `desk.json` back immediately after recovering from the backup (`restoreFromBackup`), so a recovered desk does not wait for the next edit.
+  - A copied file keeps the source's modification time, so a restored `desk.json` shows the backup's timestamp.
+- **Environment note:** `! npm run tauri add fs` failed until `source "$HOME/.cargo/env"` was run first (the `!` shell had no cargo on PATH). `npm run tauri dev` is started by the agent with that line; the user cannot relaunch the dev app by clicking.
+- **Known limit:** autosave waits 0.5 s (view: 1 s) after the last change, so Cmd+Q within that window can lose the last edit; the red close button flushes first.
