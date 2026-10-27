@@ -1076,10 +1076,310 @@ Then report to the user what was verified and ask for explicit confirmation that
 
 ### Task 6: Zoom spring
 
-- **Goal:** zooming past a soft limit at either end eases back toward a slightly less extreme zoom, animated, never a snap.
-- **Files:** `src/camera/spring.ts` (pure maths: given current zoom, limits and elapsed time past the limit, return a target zoom), `src/camera/useZoomSpring.ts` (hook driving the tldraw camera), tests in `src/camera/spring.test.ts`.
-- **Interfaces:** `springTarget(zoom: number, msPastLimit: number): number | null`, returning `null` inside the limits. The camera only moves while the user is past a limit.
-- **Acceptance:** holding zoom-in past the limit eases back out; the same at the zoomed-out end; ordinary panning and zooming within limits never moves the camera on its own.
+**Goal:** zooming past a soft limit, at either end, eases back to just inside it with an animation, never a snap. The app never moves the camera at any other time.
+
+**How it behaves (a rubber band):** the user can zoom a little past a soft limit (up to a hard limit, where the camera stops). When they stop zooming for `SPRING_IDLE_MS`, the camera eases back to just inside the soft limit, keeping the centre of the window fixed. If the user pans or zooms while it is easing back, tldraw stops the animation at once (documented), so the spring never fights the user. The spring only starts after a camera change, so it does not move a view that was restored on launch.
+
+**Proposed numbers (all in one file, easy to tune by feel):**
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `SOFT_MIN_ZOOM` | 0.1 | 10%: zooming out past this triggers the spring |
+| `SOFT_MAX_ZOOM` | 4 | 400%: zooming in past this triggers the spring |
+| `HARD_MIN_ZOOM` | 0.05 | 5%: the camera cannot go further out |
+| `HARD_MAX_ZOOM` | 8 | 800%: the camera cannot go further in |
+| `SPRING_IDLE_MS` | 350 | how long you must stop zooming before it springs back |
+| `SPRING_REST_FACTOR` | 0.85 | lands at 85% of the upper limit (3.4), or 1/0.85 of the lower (about 0.118) |
+| `SPRING_DURATION_MS` | 450 | length of the ease-back animation |
+
+**Design decisions**
+- The pure maths (`springTarget`, `zoomAbout`) is separate from the tldraw wiring, so Vitest can test it without a canvas.
+- The tldraw hard limit is the first and last value of `zoomSteps`, so `zoomSteps` must reach past the soft limits for overshoot to be possible. The zoom buttons and keyboard steps therefore also include the hard levels, and the spring pulls back from those.
+- tldraw maps a page point to the screen as `(page + camera) * zoom`. `zoomAbout` is derived from that, so the centre of the window stays put while the zoom changes.
+- The hook is a child component of `<Tldraw>` so it can use `useEditor()`.
+
+**Files:**
+- Create: `src/camera/springConfig.ts`, `src/camera/spring.ts`, `src/camera/spring.test.ts`
+- Create: `src/camera/ZoomSpring.tsx` (hook plus the tiny child component)
+- Modify: `src/Desk.tsx`
+
+**Interfaces:**
+- Consumes: `Desk` from Task 5; tldraw's `Editor` (`getCamera`, `setCamera`, `getViewportScreenBounds`, `store.listen`), `EASINGS`, `useEditor`.
+- Produces:
+  - `springConfig.ts`: the constants in the table, plus `ZOOM_STEPS: number[]`.
+  - `spring.ts`: `interface Camera { x: number; y: number; z: number }`, `interface Point { x: number; y: number }`, `springTarget(zoom: number, msSinceLastChange: number): number | null`, `zoomAbout(camera: Camera, screenPoint: Point, newZoom: number): Camera`.
+  - `ZoomSpring.tsx`: `ZoomSpring(): null`, a component to render inside `<Tldraw>`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `src/camera/spring.test.ts`. The tests read the limits from the config, so tuning the numbers later does not break them.
+
+```ts
+import { describe, it, expect } from "vitest";
+import { springTarget, zoomAbout, type Camera, type Point } from "./spring";
+import {
+  SOFT_MAX_ZOOM,
+  SOFT_MIN_ZOOM,
+  SPRING_IDLE_MS,
+  SPRING_REST_FACTOR,
+} from "./springConfig";
+
+describe("springTarget", () => {
+  it("does nothing inside the soft limits, however long the user is idle", () => {
+    for (const z of [SOFT_MIN_ZOOM, 0.5, 1, 2, SOFT_MAX_ZOOM]) {
+      expect(springTarget(z, SPRING_IDLE_MS * 10)).toBeNull();
+    }
+  });
+
+  it("waits until the user has stopped zooming", () => {
+    expect(springTarget(SOFT_MAX_ZOOM * 1.5, SPRING_IDLE_MS - 1)).toBeNull();
+    expect(springTarget(SOFT_MIN_ZOOM / 1.5, SPRING_IDLE_MS - 1)).toBeNull();
+  });
+
+  it("eases back to just inside the upper limit", () => {
+    expect(springTarget(SOFT_MAX_ZOOM * 1.5, SPRING_IDLE_MS)).toBeCloseTo(
+      SOFT_MAX_ZOOM * SPRING_REST_FACTOR,
+    );
+  });
+
+  it("eases back to just inside the lower limit", () => {
+    expect(springTarget(SOFT_MIN_ZOOM / 1.5, SPRING_IDLE_MS)).toBeCloseTo(
+      SOFT_MIN_ZOOM / SPRING_REST_FACTOR,
+    );
+  });
+
+  it("always lands inside the soft limits and moves back toward them", () => {
+    for (const z of [0.01, 0.05, 0.09, 4.01, 5, 8, 50]) {
+      const target = springTarget(z, SPRING_IDLE_MS);
+      expect(target).not.toBeNull();
+      expect(target as number).toBeGreaterThanOrEqual(SOFT_MIN_ZOOM);
+      expect(target as number).toBeLessThanOrEqual(SOFT_MAX_ZOOM);
+      if (z > SOFT_MAX_ZOOM) expect(target as number).toBeLessThan(z);
+      else expect(target as number).toBeGreaterThan(z);
+    }
+  });
+
+  it("ignores impossible zoom values", () => {
+    for (const z of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(springTarget(z, SPRING_IDLE_MS * 10)).toBeNull();
+    }
+  });
+});
+
+describe("zoomAbout", () => {
+  // tldraw maps a page point to the screen as (page + camera) * zoom.
+  const toScreen = (c: Camera, p: Point): Point => ({ x: (p.x + c.x) * c.z, y: (p.y + c.y) * c.z });
+
+  it("keeps the page point under the chosen screen point fixed", () => {
+    const camera: Camera = { x: -120, y: 75, z: 8 };
+    const centre: Point = { x: 640, y: 400 };
+    const page: Point = { x: centre.x / camera.z - camera.x, y: centre.y / camera.z - camera.y };
+
+    const next = zoomAbout(camera, centre, 3.4);
+    const after = toScreen(next, page);
+
+    expect(next.z).toBe(3.4);
+    expect(after.x).toBeCloseTo(centre.x);
+    expect(after.y).toBeCloseTo(centre.y);
+  });
+
+  it("works when zooming out as well", () => {
+    const camera: Camera = { x: 30, y: -10, z: 0.05 };
+    const centre: Point = { x: 500, y: 300 };
+    const page: Point = { x: centre.x / camera.z - camera.x, y: centre.y / camera.z - camera.y };
+
+    const after = toScreen(zoomAbout(camera, centre, 0.12), page);
+
+    expect(after.x).toBeCloseTo(centre.x);
+    expect(after.y).toBeCloseTo(centre.y);
+  });
+
+  it("returns the same camera when the zoom is unchanged", () => {
+    const camera: Camera = { x: 1, y: 2, z: 1 };
+    expect(zoomAbout(camera, { x: 10, y: 10 }, 1)).toBe(camera);
+  });
+
+  it("returns the same camera for an invalid zoom", () => {
+    const camera: Camera = { x: 1, y: 2, z: 1 };
+    for (const z of [0, -2, Number.NaN]) {
+      expect(zoomAbout(camera, { x: 10, y: 10 }, z)).toBe(camera);
+    }
+  });
+});
+```
+
+- [ ] **Step 2: Run it to see it fail**
+
+Run: `npm test`. Expected: FAIL, because `./spring` and `./springConfig` cannot be resolved.
+
+- [ ] **Step 3: Implement the config and the maths**
+
+Create `src/camera/springConfig.ts`:
+
+```ts
+// Zoom levels are tldraw zoom: 1 = 100%.
+export const SOFT_MIN_ZOOM = 0.1;
+export const SOFT_MAX_ZOOM = 4;
+export const HARD_MIN_ZOOM = 0.05;
+export const HARD_MAX_ZOOM = 8;
+
+export const SPRING_IDLE_MS = 350;
+export const SPRING_REST_FACTOR = 0.85;
+export const SPRING_DURATION_MS = 450;
+
+// tldraw clamps the camera to the first and last step, so the hard limits go at the ends.
+export const ZOOM_STEPS = [
+  HARD_MIN_ZOOM,
+  SOFT_MIN_ZOOM,
+  0.25,
+  0.5,
+  1,
+  2,
+  SOFT_MAX_ZOOM,
+  HARD_MAX_ZOOM,
+];
+```
+
+Create `src/camera/spring.ts`:
+
+```ts
+import {
+  SOFT_MAX_ZOOM,
+  SOFT_MIN_ZOOM,
+  SPRING_IDLE_MS,
+  SPRING_REST_FACTOR,
+} from "./springConfig";
+
+export interface Camera {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+// Where the zoom should ease back to, or null when nothing should happen.
+export function springTarget(zoom: number, msSinceLastChange: number): number | null {
+  if (!Number.isFinite(zoom) || zoom <= 0) return null;
+  if (msSinceLastChange < SPRING_IDLE_MS) return null;
+  if (zoom > SOFT_MAX_ZOOM) return SOFT_MAX_ZOOM * SPRING_REST_FACTOR;
+  if (zoom < SOFT_MIN_ZOOM) return SOFT_MIN_ZOOM / SPRING_REST_FACTOR;
+  return null;
+}
+
+// Change the zoom while keeping the page point under `screenPoint` where it is.
+// tldraw maps a page point to the screen as (page + camera) * zoom.
+export function zoomAbout(camera: Camera, screenPoint: Point, newZoom: number): Camera {
+  if (!Number.isFinite(newZoom) || newZoom <= 0 || newZoom === camera.z) return camera;
+  return {
+    x: screenPoint.x / newZoom - screenPoint.x / camera.z + camera.x,
+    y: screenPoint.y / newZoom - screenPoint.y / camera.z + camera.y,
+    z: newZoom,
+  };
+}
+```
+
+- [ ] **Step 4: Run it to see it pass, then commit**
+
+Run: `npm test`. Expected: PASS (all earlier tests plus the new ones).
+
+```bash
+git add src/camera
+git commit -m "feat: zoom spring maths and tuning constants"
+```
+
+- [ ] **Step 5: Wire the spring into the editor**
+
+Create `src/camera/ZoomSpring.tsx`. Before relying on it, check the installed types for `Editor#setCamera`, `Editor#getViewportScreenBounds` and the shape of `store.listen`'s `entry.changes.updated`, and adjust if they differ.
+
+```tsx
+import { useEffect } from "react";
+import { EASINGS, useEditor } from "tldraw";
+import { zoomAbout } from "./spring";
+import { springTarget } from "./spring";
+import { SPRING_DURATION_MS, SPRING_IDLE_MS } from "./springConfig";
+
+export function ZoomSpring(): null {
+  const editor = useEditor();
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const settle = () => {
+      timer = null;
+      const camera = editor.getCamera();
+      const target = springTarget(camera.z, SPRING_IDLE_MS);
+      if (target === null) return;
+      const viewport = editor.getViewportScreenBounds();
+      const centre = { x: viewport.w / 2, y: viewport.h / 2 };
+      editor.setCamera(zoomAbout(camera, centre, target), {
+        animation: { duration: SPRING_DURATION_MS, easing: EASINGS.easeOutCubic },
+      });
+    };
+
+    // Re-arm the timer on every camera change; it fires once the user has stopped.
+    const unlisten = editor.store.listen(
+      (entry) => {
+        const touchedCamera = Object.keys(entry.changes.updated).some((id) =>
+          id.startsWith("camera:"),
+        );
+        if (!touchedCamera) return;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(settle, SPRING_IDLE_MS);
+      },
+      { scope: "session" },
+    );
+
+    return () => {
+      unlisten();
+      if (timer) clearTimeout(timer);
+    };
+  }, [editor]);
+
+  return null;
+}
+```
+
+Modify `src/Desk.tsx`: import `ZOOM_STEPS` from `./camera/springConfig` and `ZoomSpring` from `./camera/ZoomSpring`, pass `options={{ camera: { zoomSteps: ZOOM_STEPS } }}` to `<Tldraw>`, and render `<ZoomSpring />` as a child of `<Tldraw>`:
+
+```tsx
+<Tldraw
+  store={store}
+  colorScheme="light"
+  licenseKey={licenseKey || undefined}
+  options={{ camera: { zoomSteps: ZOOM_STEPS } }}
+>
+  <ZoomSpring />
+</Tldraw>
+```
+
+If tldraw's `options.camera` replaces the other camera defaults instead of merging, or rejects children, follow the installed types and note the fix in Findings. Merge the two `./spring` imports into one line.
+
+Run: `npm run build && npm test`. Expected: both pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat: zoom spring eases the camera back inside the soft limits"
+```
+
+- [ ] **Step 7: User verifies by hand (agent starts `npm run tauri dev`)**
+
+Give the user this list and wait for their answers:
+1. **Zoom in past the soft limit.** Zoom in with pinch or Cmd+scroll until it stops (about 800%). Let go. After a moment the view eases back to about 340%. The point at the centre of the window stays put while it eases.
+2. **Zoom out past the soft limit.** Zoom out until it stops (about 5%). Let go. It eases back in to about 12%.
+3. **Normal use stays still.** Zoom and pan anywhere between 10% and 400%. Nothing ever moves by itself.
+4. **Interrupting.** While it is easing back, scroll or pan. The animation stops at once and you are in control. It never fights you.
+5. **Zoom buttons and keyboard steps** (the zoom control and Cmd+plus / Cmd+minus): the steps still work, and the hard levels also spring back.
+6. **Feel.** Is it too early, too late, too fast or too slow? Say what to change. Every number is in `src/camera/springConfig.ts`, so tuning is a one-line change.
+
+- [ ] **Step 8: Tune and commit**
+
+Adjust the constants in `src/camera/springConfig.ts` with the user until it feels right. Run `npm test` (the tests read the limits from the config), then commit: `git commit -am "tune: zoom spring numbers"`. Report what was verified and ask for explicit confirmation that Task 6 is done before starting Task 7.
 
 ### Task 7: Paper shape (frame, fixed text size)
 
