@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { springTarget, zoomAbout, type Camera, type Point } from "./spring";
+import { springAnchor, springTarget, zoomAbout, type Camera, type Point } from "./spring";
 import {
   SOFT_MAX_ZOOM,
   SOFT_MIN_ZOOM,
@@ -87,5 +87,30 @@ describe("zoomAbout", () => {
     for (const z of [0, -2, Number.NaN]) {
       expect(zoomAbout(camera, { x: 10, y: 10 }, z)).toBe(camera);
     }
+  });
+});
+
+describe("springAnchor", () => {
+  const viewport = { x: 0, y: 0, w: 1000, h: 600 };
+
+  it("anchors on the mouse pointer when it is over the canvas", () => {
+    expect(springAnchor({ x: 250, y: 120 }, viewport)).toEqual({ x: 250, y: 120 });
+  });
+
+  it("measures the pointer from the canvas corner when the canvas is offset on screen", () => {
+    expect(springAnchor({ x: 350, y: 220 }, { x: 100, y: 100, w: 1000, h: 600 })).toEqual({
+      x: 250,
+      y: 120,
+    });
+  });
+
+  it("falls back to the centre when the pointer is outside the canvas", () => {
+    expect(springAnchor({ x: -5, y: 100 }, viewport)).toEqual({ x: 500, y: 300 });
+    expect(springAnchor({ x: 400, y: 700 }, viewport)).toEqual({ x: 500, y: 300 });
+  });
+
+  it("falls back to the centre when the pointer is unknown or invalid", () => {
+    expect(springAnchor(null, viewport)).toEqual({ x: 500, y: 300 });
+    expect(springAnchor({ x: Number.NaN, y: 10 }, viewport)).toEqual({ x: 500, y: 300 });
   });
 });

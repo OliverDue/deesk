@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { EASINGS, useEditor } from "tldraw";
-import { springTarget, zoomAbout } from "./spring";
+import { springAnchor, springTarget, zoomAbout } from "./spring";
 import { SPRING_DURATION_MS, SPRING_IDLE_MS } from "./springConfig";
 
 export function ZoomSpring(): null {
@@ -14,9 +14,11 @@ export function ZoomSpring(): null {
       const camera = editor.getCamera();
       const target = springTarget(camera.z, SPRING_IDLE_MS);
       if (target === null) return;
-      const viewport = editor.getViewportScreenBounds();
-      const centre = { x: viewport.w / 2, y: viewport.h / 2 };
-      editor.setCamera(zoomAbout(camera, centre, target), {
+      const anchor = springAnchor(
+        editor.inputs.getCurrentScreenPoint(),
+        editor.getViewportScreenBounds(),
+      );
+      editor.setCamera(zoomAbout(camera, anchor, target), {
         animation: { duration: SPRING_DURATION_MS, easing: EASINGS.easeOutCubic },
       });
     };

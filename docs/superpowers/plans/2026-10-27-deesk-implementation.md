@@ -1078,7 +1078,7 @@ Then report to the user what was verified and ask for explicit confirmation that
 
 **Goal:** zooming past a soft limit, at either end, eases back to just inside it with an animation, never a snap. The app never moves the camera at any other time.
 
-**How it behaves (a rubber band):** the user can zoom a little past a soft limit (up to a hard limit, where the camera stops). When they stop zooming for `SPRING_IDLE_MS`, the camera eases back to just inside the soft limit, keeping the centre of the window fixed. If the user pans or zooms while it is easing back, tldraw stops the animation at once (documented), so the spring never fights the user. The spring only starts after a camera change, so it does not move a view that was restored on launch.
+**How it behaves (a rubber band):** the user can zoom a little past a soft limit (up to a hard limit, where the camera stops). When they stop zooming for `SPRING_IDLE_MS`, the camera eases back to just inside the soft limit, keeping the point under the mouse pointer fixed (the window centre when the pointer is outside the canvas). If the user pans or zooms while it is easing back, tldraw stops the animation at once (documented), so the spring never fights the user. The spring only starts after a camera change, so it does not move a view that was restored on launch.
 
 **Proposed numbers (all in one file, easy to tune by feel):**
 
@@ -1095,7 +1095,7 @@ Then report to the user what was verified and ask for explicit confirmation that
 **Design decisions**
 - The pure maths (`springTarget`, `zoomAbout`) is separate from the tldraw wiring, so Vitest can test it without a canvas.
 - The tldraw hard limit is the first and last value of `zoomSteps`, so `zoomSteps` must reach past the soft limits for overshoot to be possible. The zoom buttons and keyboard steps therefore also include the hard levels, and the spring pulls back from those.
-- tldraw maps a page point to the screen as `(page + camera) * zoom`. `zoomAbout` is derived from that, so the centre of the window stays put while the zoom changes.
+- tldraw maps a page point to the screen as `(page + camera) * zoom`. `zoomAbout` is derived from that, so the anchor point stays put while the zoom changes (`springAnchor` chooses the mouse pointer, or the window centre when the pointer is outside the canvas).
 - The hook is a child component of `<Tldraw>` so it can use `useEditor()`.
 
 **Files:**
@@ -1476,3 +1476,4 @@ Adjust the constants in `src/camera/springConfig.ts` with the user until it feel
   - A copied file keeps the source's modification time, so a restored `desk.json` shows the backup's timestamp.
 - **Environment note:** `! npm run tauri add fs` failed until `source "$HOME/.cargo/env"` was run first (the `!` shell had no cargo on PATH). `npm run tauri dev` is started by the agent with that line; the user cannot relaunch the dev app by clicking.
 - **Known limit:** autosave waits 0.5 s (view: 1 s) after the last change, so Cmd+Q within that window can lose the last edit; the red close button flushes first.
+- **Task 6 user feedback (2026-10-27):** the first version zoomed about the window centre, so content under the mouse drifted away as it eased back. Fixed: the spring now zooms about the mouse pointer (`springAnchor`, with a window-centre fallback). Quick repeated pinching during the ease-back cancels the animation by design (tldraw stops camera animations on user input).

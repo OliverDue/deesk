@@ -16,6 +16,25 @@ export interface Point {
   y: number;
 }
 
+export interface Bounds {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+// The point the spring zooms around, in canvas coordinates: the mouse pointer when it is
+// over the canvas, otherwise the centre of the canvas.
+export function springAnchor(pointerOnScreen: Point | null, viewport: Bounds): Point {
+  const centre = { x: viewport.w / 2, y: viewport.h / 2 };
+  if (!pointerOnScreen) return centre;
+  const x = pointerOnScreen.x - viewport.x;
+  const y = pointerOnScreen.y - viewport.y;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return centre;
+  if (x < 0 || y < 0 || x > viewport.w || y > viewport.h) return centre;
+  return { x, y };
+}
+
 // Where the zoom should ease back to, or null when nothing should happen.
 export function springTarget(zoom: number, msSinceLastChange: number): number | null {
   if (!Number.isFinite(zoom) || zoom <= 0) return null;
