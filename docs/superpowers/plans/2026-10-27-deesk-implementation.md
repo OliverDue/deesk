@@ -1,0 +1,481 @@
+# Deesk Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build Deesk, a fully local native desktop app: an infinite "table" canvas holding movable checklist/text papers, stickers, pins, glue and diagrams.
+
+**Architecture:** A Tauri 2 shell hosts a React + TypeScript webview. The tldraw SDK is the canvas; Deesk's own features are custom tldraw shapes and small modules (zoom spring, pin/glue rules, persistence) kept behind a thin boundary so the canvas could be swapped later. One desk is one tldraw snapshot saved as JSON with an `assets/` folder.
+
+**Tech Stack:** Tauri 2 (Rust shell), React 19, TypeScript, Vite, tldraw SDK, TipTap, Zustand, Vitest, Playwright.
+
+**Spec:** `docs/superpowers/specs/2026-10-27-deesk-design.md`. Read it before starting any task.
+
+## How this plan is organised
+
+- **Part 1 (Tasks 1–4)** is fully detailed and executable as written. Its deliverable is the first milestone: open the app from the dock and see an empty tldraw table canvas coloured `#FFF6D8`.
+- **Part 2 (Tasks 5–17)** is a roadmap. Each task states its goal, files, interfaces and acceptance criteria, but the step-level TDD detail is written just before executing it. Those steps depend on the exact API of the installed tldraw version (5.x at the time of writing), which must be checked against its docs at that time. Expand a Part 2 task with `superpowers:writing-plans` (add the steps under the task, in this file) before implementing it. Do not guess tldraw APIs from memory.
+- Tick `- [ ]` boxes in this file as steps complete, so another session can resume from the file alone.
+
+## Global Constraints
+
+- Shell is **Tauri 2**; UI is **React + TypeScript + Vite**; canvas is the **tldraw SDK**. Excalidraw is not used, embedded or otherwise.
+- Rich text and checklists use **TipTap**; app-level state uses **Zustand**; tests use **Vitest** and **Playwright**.
+- Table (desk) background colour is exactly **`#FFF6D8`** (user-specified; note it is a light cream, not a brown). The table stays this colour regardless of OS dark mode until a theme task explicitly changes it.
+- **The app never changes the view on its own.** Only the user moves the camera. The single exception is the zoom spring (Task 6).
+- **Resizing a paper never scales its text.** Font size is fixed; text reflows or clips. Hard requirement.
+- One desk, one document. No multi-desk UI, no grouping features, no sync, accounts or collaboration.
+- Autosave is debounced and **atomic** (write temp file, then rename).
+- Pin holds every paper under it; glue fixes a single paper. They are different features with different names.
+- No progress indicator on checklists.
+- Looping self-similar zoom is out of scope.
+- A packaged app counts as tldraw "production" and needs a licence key (hobby key requested by the user). Development needs none.
+- Project root: `/Users/oliverduenielsen/deesk` (git repo, branch `master`). Commit after every task.
+- Commit messages end with the attribution line given in the session's system reminder, when one is present.
+
+## Review Focus
+
+Failure modes the spec implies but no feature task would otherwise exercise, most likely first:
+
+1. **OS dark mode must not darken the table.** A user on dark macOS still expects `#FFF6D8`. Pinned in Task 3 (`inferDarkMode={false}` plus a manual check with the OS in dark mode).
+2. **Resizing, minimising and fullscreen.** The canvas must always fill the window with no scrollbars or white edges. Pinned in Task 3 (manual check) and Task 4 (window min size).
+3. **Packaged app without a licence key.** The build must fail visibly or degrade clearly, not show a silent blank window. Pinned in Task 4.
+4. **Nothing is saved yet in Part 1.** Shapes drawn before Task 5 vanish on quit. This is expected, and is stated in Task 3's acceptance so it is not mistaken for a bug.
+5. **Theme applied twice (Vite hot reload).** `applyTheme` must be idempotent. Pinned in Task 2 by a unit test.
+
+---
+
+# Part 1: Skeleton
+
+### Task 1: Toolchain and Tauri + React + Vite scaffold
+
+**Files:**
+- Create: everything the Tauri scaffold generates (`package.json`, `index.html`, `vite.config.ts`, `tsconfig*.json`, `src/`, `src-tauri/`)
+- Modify: `src-tauri/tauri.conf.json` (product name), `.gitignore`
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: `npm run tauri dev` opens a native window titled "Deesk" rendering the scaffold's React page. `npm run build` type-checks and builds the frontend. Later tasks add files under `src/` and edit `src-tauri/tauri.conf.json`.
+
+Machine state when this plan was written: Node v24.11.1 and npm 11.6.2 are installed; **Rust (`rustc`/`cargo`) is not installed**; Xcode command line tools are present.
+
+- [ ] **Step 1: Install Rust**
+
+This downloads and runs the official installer and edits shell profile files, so get the user's explicit OK first (they can run it with `! <command>`).
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source "$HOME/.cargo/env"
+```
+
+- [ ] **Step 2: Verify Rust**
+
+Run: `rustc --version && cargo --version`
+Expected: both print versions (any current stable).
+
+- [ ] **Step 3: Scaffold into a temporary directory**
+
+The project directory is not empty (docs, git), so scaffold elsewhere and copy in.
+
+```bash
+TMP=$(mktemp -d)
+cd "$TMP" && npm create tauri-app@latest deesk-scaffold -- --template react-ts --manager npm --identifier com.deesk.app --yes
+```
+
+If a flag is rejected, run `npm create tauri-app@latest -- --help` and use the equivalent. Expected: a `deesk-scaffold/` directory with `src/`, `src-tauri/`, `package.json`.
+
+- [ ] **Step 4: Copy the scaffold into the project and install**
+
+```bash
+rsync -a --exclude .git "$TMP/deesk-scaffold/" /Users/oliverduenielsen/deesk/
+cd /Users/oliverduenielsen/deesk && npm install
+```
+
+Expected: `npm install` finishes without errors.
+
+- [ ] **Step 5: Name the product Deesk**
+
+In `src-tauri/tauri.conf.json` set `"productName": "Deesk"` and the first window's `"title": "Deesk"`. Leave `identifier` as `com.deesk.app`.
+
+- [ ] **Step 6: Make sure build output is ignored**
+
+Run: `cat .gitignore`
+Expected: it lists `node_modules`, `dist`, and `src-tauri/target` (or `target`). Add any that are missing, plus `.env.local`.
+
+- [ ] **Step 7: Run the app**
+
+Run: `npm run tauri dev`
+Expected: the first run compiles Rust for a few minutes, then a native window titled "Deesk" opens showing the scaffold page. Close the window / Ctrl+C when confirmed.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A
+git commit -m "chore: scaffold Tauri 2 + React + TypeScript + Vite app"
+```
+
+---
+
+### Task 2: Test runner and theme module (TDD)
+
+**Files:**
+- Create: `src/theme.ts`, `src/theme.test.ts`
+- Modify: `vite.config.ts`, `package.json`
+
+**Interfaces:**
+- Consumes: the scaffold from Task 1.
+- Produces: `export const TABLE_COLOR: "#FFF6D8"` and `export function applyTheme(root?: HTMLElement): void` in `src/theme.ts`. `applyTheme` sets the CSS custom property `--deesk-table` on `root` (default `document.documentElement`). `npm test` runs Vitest once.
+
+- [ ] **Step 1: Install Vitest and jsdom**
+
+Run: `npm install -D vitest jsdom`
+Expected: installed without errors.
+
+- [ ] **Step 2: Configure Vitest and add the script**
+
+In `vite.config.ts`, change the import to `import { defineConfig } from "vitest/config";` and add `test: { environment: "jsdom" }` to the object the config returns (keep the scaffold's existing Tauri settings). In `package.json` add to `scripts`: `"test": "vitest run"`.
+
+- [ ] **Step 3: Write the failing test**
+
+Create `src/theme.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { TABLE_COLOR, applyTheme } from "./theme";
+
+describe("theme", () => {
+  it("uses the table colour from the spec", () => {
+    expect(TABLE_COLOR).toBe("#FFF6D8");
+  });
+
+  it("applies the table colour as a CSS variable", () => {
+    const el = document.createElement("div");
+    applyTheme(el);
+    expect(el.style.getPropertyValue("--deesk-table")).toBe("#FFF6D8");
+  });
+
+  it("is idempotent when applied twice", () => {
+    const el = document.createElement("div");
+    applyTheme(el);
+    applyTheme(el);
+    expect(el.style.getPropertyValue("--deesk-table")).toBe("#FFF6D8");
+  });
+});
+```
+
+- [ ] **Step 4: Run it to see it fail**
+
+Run: `npm test`
+Expected: FAIL, because `./theme` cannot be resolved.
+
+- [ ] **Step 5: Implement**
+
+Create `src/theme.ts`:
+
+```ts
+export const TABLE_COLOR = "#FFF6D8";
+
+export function applyTheme(root: HTMLElement = document.documentElement): void {
+  root.style.setProperty("--deesk-table", TABLE_COLOR);
+}
+```
+
+- [ ] **Step 6: Run it to see it pass**
+
+Run: `npm test`
+Expected: PASS, 3 tests.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add vite.config.ts package.json package-lock.json src/theme.ts src/theme.test.ts
+git commit -m "feat: add theme module with table colour"
+```
+
+---
+
+### Task 3: tldraw table canvas
+
+**Files:**
+- Create: `src/Desk.tsx`
+- Modify: `src/main.tsx`, `src/index.css` (create it if the scaffold used `App.css`), `package.json`
+- Delete: the scaffold's `src/App.tsx`, `src/App.css`, and unused assets under `src/assets/`
+
+**Interfaces:**
+- Consumes: `applyTheme()` from Task 2.
+- Produces: `export function Desk(): JSX.Element` in `src/Desk.tsx`, which renders the full-window tldraw editor. Later tasks add shapes, persistence and the zoom spring by extending `Desk.tsx` or components it renders.
+
+- [ ] **Step 1: Install tldraw**
+
+Run: `npm install tldraw`
+Expected: installed. Check the installed major version with `npm ls tldraw` and skim its quick-start docs at https://tldraw.dev to confirm `import { Tldraw } from "tldraw"` and `import "tldraw/tldraw.css"` are still the correct usage. If the docs differ, follow the docs and note the change in this file.
+
+- [ ] **Step 2: Create the Desk component**
+
+Create `src/Desk.tsx`:
+
+```tsx
+import { Tldraw } from "tldraw";
+import "tldraw/tldraw.css";
+
+export function Desk() {
+  return (
+    <div className="desk">
+      <Tldraw inferDarkMode={false} />
+    </div>
+  );
+}
+```
+
+`inferDarkMode={false}` keeps the table light when the OS is in dark mode.
+
+- [ ] **Step 3: Replace the scaffold entry point**
+
+Replace the contents of `src/main.tsx` with:
+
+```tsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { Desk } from "./Desk";
+import { applyTheme } from "./theme";
+import "./index.css";
+
+applyTheme();
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>
+    <Desk />
+  </React.StrictMode>,
+);
+```
+
+Delete `src/App.tsx`, `src/App.css` and the unused files in `src/assets/`. Make sure nothing still imports them (`npm run build` will tell you).
+
+- [ ] **Step 4: Style the table**
+
+Create or replace `src/index.css`:
+
+```css
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--deesk-table);
+}
+
+.desk {
+  position: fixed;
+  inset: 0;
+}
+
+/* tldraw's canvas colour. Both variable spellings are set because the name
+   has changed between tldraw versions; step 6 confirms which one applies. */
+.desk .tl-container.tl-theme__light {
+  --color-background: var(--deesk-table);
+  --tl-color-background: var(--deesk-table);
+}
+
+.desk .tl-background {
+  background-color: var(--deesk-table);
+}
+```
+
+- [ ] **Step 5: Type-check and test**
+
+Run: `npm run build && npm test`
+Expected: both succeed.
+
+- [ ] **Step 6: Run the app and verify the colour**
+
+Run: `npm run tauri dev`
+Expected: a window opens with a cream canvas and tldraw's toolbar. Open the webview inspector (right-click, Inspect Element), select the element with class `tl-background`, and check its computed `background-color` is `rgb(255, 246, 216)`. If it is not, find which variable the installed tldraw uses for its canvas background (search the computed styles of `.tl-container` for `background`), update the CSS above to match, and remove the spelling that does not apply.
+
+- [ ] **Step 7: Check the Review Focus items for this task**
+
+Confirm each by hand:
+- Draw a rectangle, pan with space+drag or scroll, and zoom. All work.
+- Set macOS to dark appearance (System Settings, Appearance). The table is still cream.
+- Resize the window small and large, and use fullscreen. The canvas always fills the window with no scrollbars or white edges.
+- Quit and reopen. The desk is empty. This is expected, because persistence arrives in Task 5.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A
+git commit -m "feat: render tldraw canvas as a cream table"
+```
+
+---
+
+### Task 4: Window settings, licence key wiring and a dock-ready build
+
+**Files:**
+- Modify: `src-tauri/tauri.conf.json`, `src/Desk.tsx`
+- Create: `.env.example`, `.env.local` (git-ignored, holds the real key)
+- Test: none automated; this task is verified by running the packaged app.
+
+**Interfaces:**
+- Consumes: `Desk` from Task 3.
+- Produces: a built `Deesk.app` that opens from the dock. `Desk` reads the optional licence key from `import.meta.env.VITE_TLDRAW_LICENSE_KEY` and passes it to tldraw.
+
+- [ ] **Step 1: Set sensible window defaults**
+
+In `src-tauri/tauri.conf.json`, in the first entry of `app.windows`, set (keeping other existing fields):
+
+```json
+{
+  "title": "Deesk",
+  "width": 1280,
+  "height": 800,
+  "minWidth": 640,
+  "minHeight": 480
+}
+```
+
+- [ ] **Step 2: Wire the licence key**
+
+tldraw's docs say a licence key is needed in production, and a packaged Tauri app runs from a non-localhost origin, so it counts as production. Verify the current prop name in the tldraw licence docs (https://tldraw.dev/sdk-features/license-key), then change `src/Desk.tsx` to:
+
+```tsx
+import { Tldraw } from "tldraw";
+import "tldraw/tldraw.css";
+
+const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY as string | undefined;
+
+export function Desk() {
+  return (
+    <div className="desk">
+      <Tldraw inferDarkMode={false} licenseKey={licenseKey} />
+    </div>
+  );
+}
+```
+
+Create `.env.example` containing `VITE_TLDRAW_LICENSE_KEY=` and confirm `.env.local` is in `.gitignore`.
+
+- [ ] **Step 3: User action: request the hobby licence**
+
+Ask the user to request a tldraw hobby licence for a non-commercial personal desktop app (see the licence docs for the form), and to list the allowed hosts the app runs on. In a packaged Tauri macOS app the origin is `tauri://localhost`, so include that if the form allows custom hosts. Put the key they receive in `.env.local` as `VITE_TLDRAW_LICENSE_KEY=...`. If they have no key yet, continue with Step 4 anyway and record the result of Step 6 as expected.
+
+- [ ] **Step 4: Build the app bundle**
+
+Run: `npm run tauri build`
+Expected: finishes and produces `src-tauri/target/release/bundle/macos/Deesk.app`. The first build takes several minutes.
+
+- [ ] **Step 5: Install it and add it to the dock**
+
+```bash
+cp -R src-tauri/target/release/bundle/macos/Deesk.app /Applications/
+open /Applications/Deesk.app
+```
+
+Then right-click the running app's dock icon, Options, Keep in Dock.
+
+- [ ] **Step 6: Verify the packaged app**
+
+Expected with a valid key: the cream canvas, no blocking message, drawing works. Expected without a key or with a wrong host: record exactly what happens (watermark, a notice, a disabled editor or a blank window). If the window is blank, that is the Review Focus item 3 failure. Capture the webview console output (right-click, Inspect Element is available in dev builds only, so reproduce with `npm run tauri dev -- --release` if needed) and write what you found at the bottom of this file under a "Findings" heading, so the next session knows. Do not work around licence enforcement.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src-tauri/tauri.conf.json src/Desk.tsx .env.example .gitignore
+git commit -m "feat: window defaults, licence key wiring, dock-ready build"
+```
+
+**Milestone 1 reached:** Deesk opens from the dock and shows the table canvas.
+
+---
+
+# Part 2: Roadmap
+
+Each task below gets step-level TDD detail added under it (use `superpowers:writing-plans`, checking the installed tldraw API first) before it is implemented. Pure logic goes into small modules with Vitest tests; canvas behaviour is verified with a short Playwright flow where practical, and by hand otherwise.
+
+### Task 5: Persistence
+
+- **Goal:** the desk survives quit and relaunch, and a crash cannot corrupt it.
+- **Files:** `src/persistence/snapshot.ts` (serialise/parse), `src/persistence/store.ts` (debounced autosave, load on start), `src-tauri/` filesystem permissions (Tauri fs plugin, scoped to the app data directory), `src/Desk.tsx` (wire-up), tests in `src/persistence/*.test.ts`.
+- **Interfaces:** `saveDesk(snapshot): Promise<void>` writes `desk.json.tmp` then renames to `desk.json` (atomic). `loadDesk(): Promise<Snapshot | null>` returns `null` on first launch. A corrupt `desk.json` falls back to the last backup instead of crashing.
+- **Acceptance:** draw, quit, relaunch, and the shapes are there. Killing the app mid-write leaves a loadable desk. First launch with no file opens an empty desk.
+
+### Task 6: Zoom spring
+
+- **Goal:** zooming past a soft limit at either end eases back toward a slightly less extreme zoom, animated, never a snap.
+- **Files:** `src/camera/spring.ts` (pure maths: given current zoom, limits and elapsed time past the limit, return a target zoom), `src/camera/useZoomSpring.ts` (hook driving the tldraw camera), tests in `src/camera/spring.test.ts`.
+- **Interfaces:** `springTarget(zoom: number, msPastLimit: number): number | null`, returning `null` inside the limits. The camera only moves while the user is past a limit.
+- **Acceptance:** holding zoom-in past the limit eases back out; the same at the zoomed-out end; ordinary panning and zooming within limits never moves the camera on its own.
+
+### Task 7: Paper shape (frame, fixed text size)
+
+- **Goal:** a custom tldraw shape for a paper that can be created, moved, resized and styled (colour, size).
+- **Files:** `src/shapes/paper/PaperShapeUtil.tsx`, `src/shapes/paper/paper-types.ts`, registration in `src/Desk.tsx`, tests for the shape's resize behaviour.
+- **Interfaces:** shape type `"paper"` with props `{ w: number; h: number; color: string; body: "text" | "checklist" }`. Resizing only changes `w` and `h`.
+- **Acceptance:** drag-resizing a paper never changes text size. Text reflows or clips.
+
+### Task 8: Text body with markdown headers and bold
+
+- **Goal:** click a paper to edit text with TipTap. `#` at line start makes headers, Cmd+B toggles bold.
+- **Files:** `src/shapes/paper/TextBody.tsx`, `src/editor/tiptap-config.ts`, tests for the config's input rules.
+- **Acceptance:** typing `# Title` becomes a header, Cmd+B bolds the selection, and the content is stored in the shape and persists via Task 5.
+
+### Task 9: Checklist body
+
+- **Goal:** checklist papers with nested items, drag-to-reorder and check/uncheck. No progress indicator.
+- **Files:** `src/shapes/paper/ChecklistBody.tsx`, reuse of the TipTap task-list extension, tests for nesting and reorder logic.
+- **Acceptance:** items nest, reorder and tick. Content persists.
+
+### Task 10: Figures on papers
+
+- **Goal:** boxes, arrows, freehand and images drawn on a paper become its children: they move with it and are clipped to its edge.
+- **Files:** changes to `PaperShapeUtil` (child handling and clipping), tests for the parent-child behaviour.
+- **Acceptance:** moving or resizing a paper carries its figures; arrows attached between figures stay attached.
+
+### Task 11: Focus dim
+
+- **Goal:** while editing a paper, every other shape is dimmed. The camera never moves.
+- **Files:** `src/focus/useFocusDim.ts`, styles. A test asserts the camera is unchanged before and after focusing a paper.
+- **Acceptance:** dim on edit, restored on exit, no camera change.
+
+### Task 12: Stickers
+
+- **Goal:** small coloured circles from a fixed palette, placeable on the desk or on a paper.
+- **Files:** `src/shapes/sticker/StickerShapeUtil.tsx`, `src/shapes/sticker/palette.ts`, a toolbar entry.
+- **Acceptance:** place stickers in each colour; they persist and can sit on papers.
+
+### Task 13: Glue
+
+- **Goal:** a per-paper toggle that blocks move and resize, with a small visual cue.
+- **Files:** `src/rules/glue.ts` (pure: can this shape move or resize?), integration in `PaperShapeUtil`, tests in `src/rules/glue.test.ts`.
+- **Interfaces:** `isGlued(shape): boolean`; glued papers reject translate and resize.
+- **Acceptance:** a glued paper cannot be dragged or resized until unglued.
+
+### Task 14: Pin
+
+- **Goal:** a pin-icon shape. Placing it pins every paper under it. Removing it releases them.
+- **Files:** `src/shapes/pin/PinShapeUtil.tsx`, `src/rules/pin.ts` (pure: which papers lie under a pin point; pinned set), tests in `src/rules/pin.test.ts`.
+- **Interfaces:** `papersUnderPin(pin, papers): PaperId[]`; pinned papers reject translate and resize until the pin is deleted.
+- **Acceptance:** place a pin over several papers, none can move. Delete the pin and they all can. Persists across relaunch.
+
+### Task 15: Images and assets folder
+
+- **Goal:** paste or drop images onto the desk or a paper. Files are stored in `assets/` beside `desk.json`.
+- **Files:** `src/persistence/assets.ts`, Tauri fs scope update, tests for asset path handling.
+- **Acceptance:** an image survives relaunch and the app stays usable if an asset file is missing (placeholder, no crash).
+
+### Task 16: Command palette, search and built-in canvas aids
+
+- **Goal:** Cmd+K palette, search across paper text, and tldraw's minimap, snapping and alignment guides switched on.
+- **Files:** `src/palette/CommandPalette.tsx`, `src/search/index.ts`, tests for the search index.
+- **Acceptance:** Cmd+K opens the palette; searching finds papers by text and jumps there only when the user picks a result (an explicit user action, not an automatic camera move).
+
+### Task 17: Themes and export
+
+- **Goal:** a light and dark theme (the table colour for dark is chosen then), plus export of papers or the desk as PNG, SVG and Markdown.
+- **Files:** `src/theme.ts` (extend), `src/export/*.ts`, tests for the Markdown exporter.
+- **Acceptance:** the theme toggle works and persists; each export format produces a valid file.
+
+---
+
+## Findings
+
+(Added during execution: licence behaviour of the packaged app, tldraw API changes, anything the next session should know.)
