@@ -1,0 +1,18 @@
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--deesk-table);
+}
+
+.desk {
+  position: fixed;
+  inset: 0;
+}
+
+/* tldraw takes its canvas colour from this variable (5.x). */
+.desk .tl-container.tl-theme__light {
+  --tl-color-background: var(--deesk-table);
+}

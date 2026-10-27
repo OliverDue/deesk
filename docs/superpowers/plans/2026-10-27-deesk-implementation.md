@@ -485,3 +485,9 @@ Each task below gets step-level TDD detail added under it (use `superpowers:writ
 ## Findings
 
 (Added during execution: licence behaviour of the packaged app, tldraw API changes, anything the next session should know.)
+
+- **Tasks 1-3 done (2026-10-27).** Rust 1.99.1 installed by the user. App opens, cream `#FFF6D8` table confirmed by the user, stays cream in macOS dark mode, resizing fine.
+- **tldraw 5.5.2 API differences from this plan's Task 3 text:** the `inferDarkMode` prop no longer exists; use `colorScheme="light"` (it defaults to light). The canvas variable is only `--tl-color-background` (no `--color-background`). The licence prop is `licenseKey`, documented as "License key to remove watermark".
+- **Dev mode shows a notice at bottom right: "get a license for production".** A hobby key is expected to change this to the "made with tldraw" mark (Task 4).
+- **Arrows:** tldraw arrows have `kind: 'arc' | 'elbow'` (elbow = right-angle routing). The user wants angled arrows; they are available in the style panel. A default-kind setting is a possible later task.
+- **Known, accepted:** brief delayed rendering of off-screen shapes when zooming back out. Revisit only if it bothers the user with real content.
