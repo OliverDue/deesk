@@ -24,12 +24,21 @@ async function readBackup(fs: FileOps): Promise<unknown | undefined> {
   return parsed.ok ? parsed.document : undefined;
 }
 
+// Put the backup back as desk.json straight away, so a recovered desk is on disk
+// as the current file and does not wait for the user's next edit.
+async function restoreFromBackup(fs: FileOps): Promise<void> {
+  await fs.copy(BACKUP_FILE, TMP_FILE);
+  await fs.rename(TMP_FILE, DESK_FILE);
+}
+
 export async function loadDesk(fs: FileOps, now: () => number = Date.now): Promise<LoadResult> {
   const text = await fs.read(DESK_FILE);
 
   if (text === null) {
     const backup = await readBackup(fs);
-    return backup === undefined ? { kind: "empty" } : { kind: "recovered", document: backup };
+    if (backup === undefined) return { kind: "empty" };
+    await restoreFromBackup(fs);
+    return { kind: "recovered", document: backup };
   }
 
   const parsed = parseDesk(text);
@@ -38,7 +47,9 @@ export async function loadDesk(fs: FileOps, now: () => number = Date.now): Promi
   // Never delete a damaged desk: move it aside so it can be inspected.
   await fs.rename(DESK_FILE, `desk.unreadable-${now()}.json`);
   const backup = await readBackup(fs);
-  return backup === undefined ? { kind: "unreadable" } : { kind: "recovered", document: backup };
+  if (backup === undefined) return { kind: "unreadable" };
+  await restoreFromBackup(fs);
+  return { kind: "recovered", document: backup };
 }
 
 export async function saveDesk(fs: FileOps, document: unknown): Promise<void> {

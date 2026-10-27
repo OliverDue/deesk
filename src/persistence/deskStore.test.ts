@@ -53,8 +53,26 @@ describe("deskStore", () => {
       [BACKUP_FILE]: serializeDesk(docA),
     });
     expect(await loadDesk(fs, now)).toEqual({ kind: "recovered", document: docA });
-    expect(files.has(DESK_FILE)).toBe(false);
     expect(files.get("desk.unreadable-1000.json")).toBe("garbage {");
+  });
+
+  it("writes desk.json back right after recovering from a corrupt file", async () => {
+    const { fs, files } = memoryFs({
+      [DESK_FILE]: "garbage {",
+      [BACKUP_FILE]: serializeDesk(docA),
+    });
+    await loadDesk(fs, now);
+    expect(files.get(DESK_FILE)).toBe(serializeDesk(docA));
+    expect(files.get(BACKUP_FILE)).toBe(serializeDesk(docA));
+    expect(files.has(TMP_FILE)).toBe(false);
+    expect(await loadDesk(fs, now)).toEqual({ kind: "ok", document: docA });
+  });
+
+  it("writes desk.json back after recovering when desk.json was missing", async () => {
+    const { fs, files } = memoryFs({ [BACKUP_FILE]: serializeDesk(docA) });
+    await loadDesk(fs, now);
+    expect(files.get(DESK_FILE)).toBe(serializeDesk(docA));
+    expect(files.has(TMP_FILE)).toBe(false);
   });
 
   it("reports unreadable, and keeps the bad file, when there is no usable backup", async () => {
