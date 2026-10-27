@@ -399,10 +399,580 @@ Each task below gets step-level TDD detail added under it (use `superpowers:writ
 
 ### Task 5: Persistence
 
-- **Goal:** the desk survives quit and relaunch, and a crash cannot corrupt it.
-- **Files:** `src/persistence/snapshot.ts` (serialise/parse), `src/persistence/store.ts` (debounced autosave, load on start), `src-tauri/` filesystem permissions (Tauri fs plugin, scoped to the app data directory), `src/Desk.tsx` (wire-up), tests in `src/persistence/*.test.ts`.
-- **Interfaces:** `saveDesk(snapshot): Promise<void>` writes `desk.json.tmp` then renames to `desk.json` (atomic). `loadDesk(): Promise<Snapshot | null>` returns `null` on first launch. A corrupt `desk.json` falls back to the last backup instead of crashing.
-- **Acceptance:** draw, quit, relaunch, and the shapes are there. Killing the app mid-write leaves a loadable desk. First launch with no file opens an empty desk.
+**Goal:** the desk survives quit and relaunch, and a crash or a corrupt file cannot destroy it.
+
+**Where it is saved:** `~/Library/Application Support/com.deesk.app/` (Tauri's `AppData` folder for the app identifier, so `npm run tauri dev` and the packaged app share the same desk). Files: `desk.json` (current), `desk.backup.json` (previous good version), `desk.json.tmp` (only during a write), and `desk.unreadable-<timestamp>.json` (a damaged file moved aside, never deleted).
+
+**Design decisions**
+- Only tldraw's `document` part of the snapshot is saved (shapes, pages). Camera and selection are not (open question for the user: restore the last view on launch?).
+- Pure logic (file format, load/save/recovery, debounce) is separated from Tauri so Vitest can test it with a fake in-memory file system. Only `tauriFs.ts` touches the real file system.
+- Saving starts only after loading has finished, so an empty desk can never overwrite a real one.
+- The backup is only refreshed from a `desk.json` that parses. A corrupt file is never copied over a good backup.
+
+**Files:**
+- Create: `src/persistence/deskFile.ts`, `src/persistence/deskFile.test.ts`
+- Create: `src/persistence/deskStore.ts`, `src/persistence/deskStore.test.ts`
+- Create: `src/persistence/autosave.ts`, `src/persistence/autosave.test.ts`
+- Create: `src/persistence/tauriFs.ts`, `src/persistence/useDeskStore.ts`
+- Modify: `src/Desk.tsx`, `src-tauri/Cargo.toml`, `src-tauri/src/lib.rs`, `src-tauri/capabilities/default.json`, `package.json` (all via the fs plugin install in Step 1)
+
+**Interfaces:**
+- Consumes: `Desk` from Task 3/4; tldraw's `createTLStore`, `getSnapshot`, `loadSnapshot` and `store.listen`.
+- Produces:
+  - `deskFile.ts`: `serializeDesk(document: unknown): string`; `parseDesk(text: string): ParseResult` where `ParseResult = { ok: true; document: unknown } | { ok: false; reason: "invalid" | "unsupported-version" }`.
+  - `deskStore.ts`: `interface FileOps { read(path: string): Promise<string | null>; write(path: string, text: string): Promise<void>; rename(from: string, to: string): Promise<void>; copy(from: string, to: string): Promise<void> }`; `loadDesk(fs: FileOps, now?: () => number): Promise<LoadResult>` where `LoadResult = { kind: "empty" } | { kind: "ok"; document: unknown } | { kind: "recovered"; document: unknown } | { kind: "unreadable" }`; `saveDesk(fs: FileOps, document: unknown): Promise<void>`; constants `DESK_FILE`, `TMP_FILE`, `BACKUP_FILE`.
+  - `autosave.ts`: `createAutosaver(save: () => Promise<void>, delayMs: number, onError?: (e: unknown) => void): Autosaver` where `Autosaver = { schedule(): void; flush(): Promise<void>; cancel(): void }`.
+  - `useDeskStore.ts`: `useDeskStore(): TLStore | null` (null while loading).
+
+- [ ] **Step 1: Install the Tauri file-system plugin (user runs the install)**
+
+Ask the user to run, in the project folder: `! npm run tauri add fs`. It adds the npm package `@tauri-apps/plugin-fs`, the Rust crate `tauri-plugin-fs`, registers the plugin in `src-tauri/src/lib.rs`, and adds a permission to `src-tauri/capabilities/default.json`. Then check the three edited files by eye (`git diff`) and confirm `npm run build` still passes.
+
+- [ ] **Step 2: Allow only the app data folder**
+
+In `src-tauri/capabilities/default.json`, replace the broad default `fs:default` (if the install added it) with the exact permissions used, scoped to `$APPDATA` only: `fs:allow-read-text-file`, `fs:allow-write-text-file`, `fs:allow-rename`, `fs:allow-copy-file`, `fs:allow-exists`, `fs:allow-mkdir`, and a scope entry allowing `$APPDATA` and `$APPDATA/**`. Look the exact permission identifiers up in the installed plugin's docs or in `src-tauri/gen/schemas` after a build, since names must match exactly. Do not allow any other folder.
+
+- [ ] **Step 3: Write the failing tests for the file format**
+
+Create `src/persistence/deskFile.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { serializeDesk, parseDesk } from "./deskFile";
+
+describe("deskFile", () => {
+  it("round-trips a document", () => {
+    const doc = { store: { a: 1 }, schema: { v: 2 } };
+    const result = parseDesk(serializeDesk(doc));
+    expect(result).toEqual({ ok: true, document: doc });
+  });
+
+  it("rejects text that is not JSON", () => {
+    expect(parseDesk("garbage {")).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("rejects an empty file", () => {
+    expect(parseDesk("")).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("rejects JSON without a document", () => {
+    expect(parseDesk(JSON.stringify({ version: 1 }))).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("rejects a version it does not know", () => {
+    const text = JSON.stringify({ version: 99, document: {} });
+    expect(parseDesk(text)).toEqual({ ok: false, reason: "unsupported-version" });
+  });
+});
+```
+
+- [ ] **Step 4: Run to see it fail, then implement**
+
+Run: `npm test` (expected FAIL: `./deskFile` not found). Create `src/persistence/deskFile.ts`:
+
+```ts
+export const DESK_FILE_VERSION = 1;
+
+export type ParseResult =
+  | { ok: true; document: unknown }
+  | { ok: false; reason: "invalid" | "unsupported-version" };
+
+export function serializeDesk(document: unknown): string {
+  return JSON.stringify({ version: DESK_FILE_VERSION, document });
+}
+
+export function parseDesk(text: string): ParseResult {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: "invalid" };
+  }
+  if (typeof value !== "object" || value === null) {
+    return { ok: false, reason: "invalid" };
+  }
+  const file = value as { version?: unknown; document?: unknown };
+  if (file.version !== DESK_FILE_VERSION && typeof file.version === "number") {
+    return { ok: false, reason: "unsupported-version" };
+  }
+  if (file.version !== DESK_FILE_VERSION || file.document === undefined) {
+    return { ok: false, reason: "invalid" };
+  }
+  return { ok: true, document: file.document };
+}
+```
+
+Run: `npm test`. Expected: PASS. Commit: `git add src/persistence/deskFile.* && git commit -m "feat: desk file format"`.
+
+- [ ] **Step 5: Write the failing tests for load, save and recovery**
+
+Create `src/persistence/deskStore.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { serializeDesk } from "./deskFile";
+import { BACKUP_FILE, DESK_FILE, TMP_FILE, loadDesk, saveDesk, type FileOps } from "./deskStore";
+
+function memoryFs(initial: Record<string, string> = {}) {
+  const files = new Map<string, string>(Object.entries(initial));
+  const fs: FileOps = {
+    async read(path) {
+      return files.has(path) ? (files.get(path) as string) : null;
+    },
+    async write(path, text) {
+      files.set(path, text);
+    },
+    async rename(from, to) {
+      files.set(to, files.get(from) as string);
+      files.delete(from);
+    },
+    async copy(from, to) {
+      files.set(to, files.get(from) as string);
+    },
+  };
+  return { fs, files };
+}
+
+const docA = { name: "A" };
+const docB = { name: "B" };
+const now = () => 1000;
+
+describe("deskStore", () => {
+  it("loads as empty on first launch", async () => {
+    const { fs } = memoryFs();
+    expect(await loadDesk(fs, now)).toEqual({ kind: "empty" });
+  });
+
+  it("saves and loads the same document", async () => {
+    const { fs } = memoryFs();
+    await saveDesk(fs, docA);
+    expect(await loadDesk(fs, now)).toEqual({ kind: "ok", document: docA });
+  });
+
+  it("keeps the previous version as a backup on the second save", async () => {
+    const { fs, files } = memoryFs();
+    await saveDesk(fs, docA);
+    await saveDesk(fs, docB);
+    expect(files.get(BACKUP_FILE)).toBe(serializeDesk(docA));
+    expect(files.get(DESK_FILE)).toBe(serializeDesk(docB));
+    expect(files.has(TMP_FILE)).toBe(false);
+  });
+
+  it("recovers from the backup when desk.json is corrupt, and moves the bad file aside", async () => {
+    const { fs, files } = memoryFs({
+      [DESK_FILE]: "garbage {",
+      [BACKUP_FILE]: serializeDesk(docA),
+    });
+    expect(await loadDesk(fs, now)).toEqual({ kind: "recovered", document: docA });
+    expect(files.has(DESK_FILE)).toBe(false);
+    expect(files.get("desk.unreadable-1000.json")).toBe("garbage {");
+  });
+
+  it("reports unreadable, and keeps the bad file, when there is no usable backup", async () => {
+    const { fs, files } = memoryFs({ [DESK_FILE]: "garbage {" });
+    expect(await loadDesk(fs, now)).toEqual({ kind: "unreadable" });
+    expect(files.get("desk.unreadable-1000.json")).toBe("garbage {");
+  });
+
+  it("recovers from the backup when desk.json is missing", async () => {
+    const { fs } = memoryFs({ [BACKUP_FILE]: serializeDesk(docA) });
+    expect(await loadDesk(fs, now)).toEqual({ kind: "recovered", document: docA });
+  });
+
+  it("ignores a leftover temp file from a crash mid-write", async () => {
+    const { fs } = memoryFs({
+      [DESK_FILE]: serializeDesk(docA),
+      [TMP_FILE]: '{"version":1,"docum',
+    });
+    expect(await loadDesk(fs, now)).toEqual({ kind: "ok", document: docA });
+  });
+
+  it("never copies a corrupt desk.json over a good backup", async () => {
+    const { fs, files } = memoryFs({
+      [DESK_FILE]: "garbage {",
+      [BACKUP_FILE]: serializeDesk(docA),
+    });
+    await saveDesk(fs, docB);
+    expect(files.get(BACKUP_FILE)).toBe(serializeDesk(docA));
+    expect(files.get(DESK_FILE)).toBe(serializeDesk(docB));
+  });
+});
+```
+
+- [ ] **Step 6: Run to see it fail, then implement**
+
+Run: `npm test` (expected FAIL: `./deskStore` not found). Create `src/persistence/deskStore.ts`:
+
+```ts
+import { parseDesk, serializeDesk } from "./deskFile";
+
+export const DESK_FILE = "desk.json";
+export const TMP_FILE = "desk.json.tmp";
+export const BACKUP_FILE = "desk.backup.json";
+
+export interface FileOps {
+  read(path: string): Promise<string | null>;
+  write(path: string, text: string): Promise<void>;
+  rename(from: string, to: string): Promise<void>;
+  copy(from: string, to: string): Promise<void>;
+}
+
+export type LoadResult =
+  | { kind: "empty" }
+  | { kind: "ok"; document: unknown }
+  | { kind: "recovered"; document: unknown }
+  | { kind: "unreadable" };
+
+async function readBackup(fs: FileOps): Promise<unknown | undefined> {
+  const text = await fs.read(BACKUP_FILE);
+  if (text === null) return undefined;
+  const parsed = parseDesk(text);
+  return parsed.ok ? parsed.document : undefined;
+}
+
+export async function loadDesk(fs: FileOps, now: () => number = Date.now): Promise<LoadResult> {
+  const text = await fs.read(DESK_FILE);
+
+  if (text === null) {
+    const backup = await readBackup(fs);
+    return backup === undefined ? { kind: "empty" } : { kind: "recovered", document: backup };
+  }
+
+  const parsed = parseDesk(text);
+  if (parsed.ok) return { kind: "ok", document: parsed.document };
+
+  // Never delete a damaged desk: move it aside so it can be inspected.
+  await fs.rename(DESK_FILE, `desk.unreadable-${now()}.json`);
+  const backup = await readBackup(fs);
+  return backup === undefined ? { kind: "unreadable" } : { kind: "recovered", document: backup };
+}
+
+export async function saveDesk(fs: FileOps, document: unknown): Promise<void> {
+  await fs.write(TMP_FILE, serializeDesk(document));
+
+  // Only refresh the backup from a current file that is itself valid.
+  const current = await fs.read(DESK_FILE);
+  if (current !== null && parseDesk(current).ok) {
+    await fs.copy(DESK_FILE, BACKUP_FILE);
+  }
+
+  await fs.rename(TMP_FILE, DESK_FILE);
+}
+```
+
+Run: `npm test`. Expected: PASS. Commit: `git add src/persistence/deskStore.* && git commit -m "feat: atomic desk save and recovering load"`.
+
+- [ ] **Step 7: Write the failing tests for the autosaver**
+
+Create `src/persistence/autosave.test.ts`:
+
+```ts
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { createAutosaver } from "./autosave";
+
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
+
+describe("autosaver", () => {
+  it("saves once after a burst of changes", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const saver = createAutosaver(save, 500);
+    saver.schedule();
+    await vi.advanceTimersByTimeAsync(200);
+    saver.schedule();
+    await vi.advanceTimersByTimeAsync(200);
+    saver.schedule();
+    expect(save).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("flush saves immediately when a save is pending", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const saver = createAutosaver(save, 500);
+    saver.schedule();
+    await saver.flush();
+    expect(save).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("flush does nothing when nothing changed", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const saver = createAutosaver(save, 500);
+    await saver.flush();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("never runs two saves at once, and saves again for changes made during a save", async () => {
+    let active = 0;
+    let maxActive = 0;
+    let calls = 0;
+    const save = async () => {
+      calls += 1;
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((r) => setTimeout(r, 300));
+      active -= 1;
+    };
+    const saver = createAutosaver(save, 100);
+    saver.schedule();
+    await vi.advanceTimersByTimeAsync(100); // first save starts
+    saver.schedule(); // change during the save
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(maxActive).toBe(1);
+    expect(calls).toBe(2);
+  });
+
+  it("reports a failed save and keeps working afterwards", async () => {
+    const onError = vi.fn();
+    const save = vi.fn().mockRejectedValueOnce(new Error("disk full")).mockResolvedValue(undefined);
+    const saver = createAutosaver(save, 100, onError);
+    saver.schedule();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(onError).toHaveBeenCalledTimes(1);
+    saver.schedule();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(save).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancel drops a pending save", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const saver = createAutosaver(save, 500);
+    saver.schedule();
+    saver.cancel();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).not.toHaveBeenCalled();
+  });
+});
+```
+
+- [ ] **Step 8: Run to see it fail, then implement**
+
+Run: `npm test` (expected FAIL: `./autosave` not found). Create `src/persistence/autosave.ts`:
+
+```ts
+export interface Autosaver {
+  schedule(): void;
+  flush(): Promise<void>;
+  cancel(): void;
+}
+
+export function createAutosaver(
+  save: () => Promise<void>,
+  delayMs: number,
+  onError?: (e: unknown) => void,
+): Autosaver {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let running: Promise<void> | null = null;
+  let dirty = false;
+
+  const run = async () => {
+    while (dirty) {
+      dirty = false;
+      try {
+        await save();
+      } catch (e) {
+        onError?.(e);
+      }
+    }
+  };
+
+  const start = (): Promise<void> => {
+    if (!running) {
+      running = run().finally(() => {
+        running = null;
+      });
+    }
+    return running;
+  };
+
+  const clearTimer = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+
+  return {
+    schedule() {
+      dirty = true;
+      clearTimer();
+      timer = setTimeout(() => {
+        timer = null;
+        void start();
+      }, delayMs);
+    },
+    async flush() {
+      clearTimer();
+      if (dirty) await start();
+      else if (running) await running;
+    },
+    cancel() {
+      dirty = false;
+      clearTimer();
+    },
+  };
+}
+```
+
+Run: `npm test`. Expected: PASS. Commit: `git add src/persistence/autosave.* && git commit -m "feat: debounced autosaver"`.
+
+- [ ] **Step 9: Real file operations on the Tauri side**
+
+Create `src/persistence/tauriFs.ts`. Before relying on it, open the installed types (`node_modules/@tauri-apps/plugin-fs/dist-js/index.d.ts`) and confirm the option names for `readTextFile`, `writeTextFile`, `rename`, `copyFile`, `exists` and `mkdir`; adjust this file if they differ.
+
+```ts
+import {
+  BaseDirectory,
+  copyFile,
+  exists,
+  mkdir,
+  readTextFile,
+  rename,
+  writeTextFile,
+} from "@tauri-apps/plugin-fs";
+import type { FileOps } from "./deskStore";
+
+const base = { baseDir: BaseDirectory.AppData };
+
+export const tauriFileOps: FileOps = {
+  async read(path) {
+    return (await exists(path, base)) ? readTextFile(path, base) : null;
+  },
+  write: (path, text) => writeTextFile(path, text, base),
+  rename: (from, to) =>
+    rename(from, to, {
+      oldPathBaseDir: BaseDirectory.AppData,
+      newPathBaseDir: BaseDirectory.AppData,
+    }),
+  copy: (from, to) =>
+    copyFile(from, to, {
+      fromPathBaseDir: BaseDirectory.AppData,
+      toPathBaseDir: BaseDirectory.AppData,
+    }),
+};
+
+export async function ensureDataDir(): Promise<void> {
+  await mkdir("", { ...base, recursive: true });
+}
+```
+
+Run `npm run build`. Expected: type-checks. If `mkdir("")` is rejected at runtime in Step 12, create the folder with the path `"."` or check `exists("", base)` first; note what worked in Findings.
+
+- [ ] **Step 10: Hook the store into the editor**
+
+Create `src/persistence/useDeskStore.ts`:
+
+```ts
+import { useEffect, useState } from "react";
+import { createTLStore, getSnapshot, loadSnapshot, type TLStore } from "tldraw";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { createAutosaver } from "./autosave";
+import { loadDesk, saveDesk } from "./deskStore";
+import { ensureDataDir, tauriFileOps } from "./tauriFs";
+
+const SAVE_DELAY_MS = 500;
+
+export function useDeskStore(): TLStore | null {
+  const [store, setStore] = useState<TLStore | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let stop = () => {};
+
+    (async () => {
+      await ensureDataDir();
+      const result = await loadDesk(tauriFileOps);
+      if (cancelled) return;
+
+      if (result.kind === "recovered") {
+        console.warn("Deesk: desk.json was damaged; restored from the backup.");
+      } else if (result.kind === "unreadable") {
+        console.warn("Deesk: desk.json was unreadable and has been moved aside; starting empty.");
+      }
+
+      const next = createTLStore();
+      if (result.kind === "ok" || result.kind === "recovered") {
+        loadSnapshot(next, { document: result.document as never });
+      }
+
+      // Saving starts only now, after loading finished.
+      const saver = createAutosaver(
+        () => saveDesk(tauriFileOps, getSnapshot(next).document),
+        SAVE_DELAY_MS,
+        (e) => console.error("Deesk: save failed", e),
+      );
+      const unlisten = next.listen(() => saver.schedule(), { source: "user", scope: "document" });
+      const unlistenClose = await getCurrentWindow().onCloseRequested(async () => {
+        await saver.flush();
+      });
+
+      stop = () => {
+        unlisten();
+        unlistenClose();
+        saver.cancel();
+      };
+      if (cancelled) stop();
+      else setStore(next);
+    })();
+
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, []);
+
+  return store;
+}
+```
+
+If TypeScript rejects the `as never` cast or the `loadSnapshot` argument shape, follow the installed tldraw types and note the fix in Findings.
+
+- [ ] **Step 11: Use it in the Desk**
+
+Replace `src/Desk.tsx`:
+
+```tsx
+import { Tldraw } from "tldraw";
+import "tldraw/tldraw.css";
+import { useDeskStore } from "./persistence/useDeskStore";
+
+const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY as string | undefined;
+
+export function Desk() {
+  const store = useDeskStore();
+  if (!store) return <div className="desk" />;
+  return (
+    <div className="desk">
+      <Tldraw store={store} colorScheme="light" licenseKey={licenseKey || undefined} />
+    </div>
+  );
+}
+```
+
+Run `npm run build && npm test`. Expected: both pass.
+
+- [ ] **Step 12: User verifies by hand (agent starts `npm run tauri dev`)**
+
+Give the user this list and wait for their answer, step by step:
+1. First launch: the desk opens empty and cream, no errors. (If the saved folder already exists from an earlier run, that is fine.)
+2. Draw a rectangle, an arrow and some freehand. Wait one second. Quit with Cmd+Q. Reopen: everything is still there.
+3. Move a shape. Close the window with the red button. Reopen: the shape is where you left it.
+4. Draw something, quit, reopen, draw something else, quit, reopen. Both drawings are there. Then check the folder: `ls ~/Library/Application\ Support/com.deesk.app/` shows `desk.json` and `desk.backup.json`.
+5. Damage test: quit Deesk, then run `echo garbage > ~/Library/Application\ Support/com.deesk.app/desk.json`. Reopen: the desk comes back from the backup (it may be one change older). Run `ls` on the folder again: there is now a `desk.unreadable-<number>.json` file holding the garbage.
+6. Look at the saved desk's size in Finder, and tell the agent roughly how big it is, in case images later make it grow.
+
+Known limit to tell the user: the autosave waits 0.5 seconds after the last change, so quitting with Cmd+Q within half a second of an edit can lose that last edit. Closing the window with the red button saves first.
+
+- [ ] **Step 13: Commit and ask for confirmation**
+
+```bash
+git add -A
+git commit -m "feat: autosave and restore the desk"
+```
+
+Then report to the user what was verified and ask for explicit confirmation that Task 5 is done before starting Task 6.
 
 ### Task 6: Zoom spring
 
