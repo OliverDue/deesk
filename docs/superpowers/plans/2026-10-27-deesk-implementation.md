@@ -16,6 +16,12 @@
 - **Part 2 (Tasks 5–17)** is a roadmap. Each task states its goal, files, interfaces and acceptance criteria, but the step-level TDD detail is written just before executing it. Those steps depend on the exact API of the installed tldraw version (5.x at the time of writing), which must be checked against its docs at that time. Expand a Part 2 task with `superpowers:writing-plans` (add the steps under the task, in this file) before implementing it. Do not guess tldraw APIs from memory.
 - Tick `- [ ]` boxes in this file as steps complete, so another session can resume from the file alone.
 
+## Working agreement (set by the user)
+
+- **The user does every download and install** (Rust, any system tool). The agent never runs installers; it tells the user the exact command, to be run with `! <command>` in the session, and waits.
+- **The user tests all interactions** by hand: drawing, zoom, dark mode, window resizing, the dock icon and so on. The agent runs only automated checks (`npm run build`, `npm test`) and, wherever a step says "verify by hand", writes the user a short list of what to do and what they should see, then waits for their answer before ticking the step.
+- Steps below that say "Run `npm run tauri dev`" mean the agent starts it and the user looks at the window.
+
 ## Global Constraints
 
 - Shell is **Tauri 2**; UI is **React + TypeScript + Vite**; canvas is the **tldraw SDK**. Excalidraw is not used, embedded or otherwise.
