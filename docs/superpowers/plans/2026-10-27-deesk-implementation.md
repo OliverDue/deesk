@@ -2121,30 +2121,46 @@ Hand re-test: (a) double-click puts the cursor where you clicked, and when you c
 
 ### Task 9: Tick-boxes on papers
 
-**Goal:** a paper can contain tick-boxes (checklist items). You make one by typing `[ ] ` at the start of a line, and you tick or untick it by clicking the box, **even when you are not editing the paper**. No progress indicator.
+**Goal:** a paper can contain tick-boxes (checklist items). You add one with a **button in the top right** of the window or with **Cmd+Shift+9** (both do the same thing, in every situation: editing a paper, a paper selected, or nothing selected), and you tick or untick a box by clicking it, **even when you are not editing the paper**. No progress indicator.
 
-**Scope (the user asked for the simple version):** tick-boxes only. Nesting with Tab is included because it costs nothing (tldraw already treats task lists as lists for the Tab key). **Drag-to-reorder is not part of this task** (the original roadmap had it); it is left as an optional Task 9b.
+**Scope (the user asked for the simple version):** tick-boxes only. Nesting with Tab is included because it costs nothing (tldraw already treats task lists as lists for the Tab key). **Drag-to-reorder is not part of this task**; it is left as an optional Task 9b.
+
+**Revised after user feedback (2026-10-28):** the first plan made typing `[ ] ` the main way to add a tick-box. On a Danish keyboard `[` and `]` need Option+Shift, so that is slow. The main ways are now the button and Cmd+Shift+9. The `[ ] ` markdown rule still exists (TipTap provides it) and still works, but nothing advertises it.
 
 **How (from the installed TipTap and tldraw source):**
-- TipTap's `TaskList` and `TaskItem` are exported by tldraw (no separate `@tiptap/*` install). `TaskItem` has the markdown rule `[ ] ` / `[x] ` (regex `/^\s*(\[([( |x])?\])\s$/`), Enter to split, Tab to nest (with `nested: true`), Shift+Tab to un-nest, and tldraw's `isEditingRichTextList` already counts `taskList` as a list for Tab. TipTap's own shortcut for a task list is Cmd+Shift+9.
+- TipTap's `TaskList` and `TaskItem` are exported by tldraw (no separate `@tiptap/*` install). `TaskItem` supports Enter to split, Tab to nest (with `nested: true`) and Shift+Tab to un-nest; the editor command `toggleTaskList()` turns the current line into a tick-box item, or back. tldraw's `isEditingRichTextList` already counts `taskList` as a list for Tab.
 - When the paper is **not** being edited, tldraw shows static HTML: `<li data-type="taskItem" data-checked="true"><label><input type="checkbox"><span></span></label><div>…</div></li>`. tldraw ships no styles for it, so the paper's CSS has to provide them.
-- **Ticking without editing:** tldraw calls a shape's `onClick(shape)` when it is clicked without a drag. If it returns a change, tldraw applies it (with an undo step) and does **not** select the shape; if it returns nothing, the normal select flow continues. The paper's `onClick` finds which checkbox, if any, is under the pointer, and returns the same text with that one item toggled. Finding the box uses the checkbox elements' on-screen rectangles, so it does not depend on tldraw's pointer-events settings. The Nth checkbox in document order is the Nth `taskItem` in the saved text (both are depth-first, top to bottom), which is how the two are matched.
-- Defining `onClick` changes one detail of how tldraw selects the paper: a paper is selected when the mouse button is released, not when it is pressed. Dragging an unselected paper still moves it (tldraw's embeds and bookmarks work this way); the hand test checks this.
+- **Ticking without editing:** tldraw calls a shape's `onClick(shape)` when it is clicked without a drag. If it returns a change, tldraw applies it (with an undo step) and does **not** select the shape; if it returns nothing, the normal select flow continues. The paper's `onClick` finds which checkbox, if any, is under the pointer and returns the same text with that one item toggled. The box is found from the checkbox elements' on-screen rectangles, so it does not depend on tldraw's pointer-events settings. The Nth checkbox in document order is the Nth `taskItem` in the saved text (both are depth-first, top to bottom).
+- Defining `onClick` changes one detail of how tldraw selects the paper: it is selected when the mouse button is released, not when it is pressed. Dragging an unselected paper still moves it (tldraw's embeds and bookmarks work this way); the hand test checks this.
+- **Layout-independent shortcut:** Cmd+Shift+9 is detected by the physical key (`event.code === "Digit9"`), not by the character, because Shift+9 types `)` on a Danish keyboard. TipTap's own Mod-Shift-9 only works while editing, so the app handles the shortcut itself, in the capture phase like the other keyboard rules.
+- **The top-right button** goes in tldraw's `SharePanel` slot (the top-right corner of the interface, empty in a single-user app), through the `components` prop that already carries the toolbar.
+
+**What the button and the shortcut do** (one action, three cases):
+1. **Editing a paper:** the current line becomes a tick-box, or goes back to a normal line if it already is one.
+2. **One paper selected, not editing:** the paper goes into editing and a new, empty tick-box is added at the end, with the cursor in it. (A blank paper just gets its first tick-box.)
+3. **Nothing relevant selected:** a new paper appears at the centre of the view, in editing, with an empty tick-box.
+(If something that is not a paper is being edited, such as a text label, nothing happens.)
 
 **Design decisions (proposed, to be confirmed by the user)**
-- Make a tick-box: type `[ ] ` (or `[x] ` for an already-ticked one) at the start of a line, or press Cmd+Shift+9. Enter adds the next item; Enter on an empty item leaves the list.
+- Enter adds the next item; Enter on an empty item leaves the list.
 - Ticked items look finished: the text turns grey and is struck through.
 - A click on a box ticks it without selecting the paper. A click anywhere else on the paper selects it as before.
 - The box size and the gap follow the paper's fixed font size, so resizing a paper never scales them.
 
 **Files:**
 - Create: `src/text/taskItems.ts`, `src/text/taskItems.test.ts`
-- Modify: `src/text/textOptions.ts`, `src/text/textOptions.test.ts`, `src/shapes/paper/PaperShapeUtil.tsx`, `src/index.css`
+- Create: `src/text/checklistAction.ts`, `src/text/checklistAction.test.ts`
+- Create: `src/text/whenRichTextEditorReady.ts`, `src/text/addChecklistItem.ts`, `src/text/ChecklistControls.tsx`, `public/checklist-icon.svg`
+- Modify: `src/text/textOptions.ts`, `src/text/textOptions.test.ts`, `src/text/TypeToEditListener.tsx` (use the shared wait helper), `src/shapes/paper/PaperShapeUtil.tsx`, `src/shapes/registry.tsx`, `src/Desk.tsx`, `src/index.css`
 
 **Interfaces:**
-- Consumes: Task 8's paper and `deeskExtensions`; tldraw's `TaskList`, `TaskItem`, `TLRichText`, `Editor#inputs.getCurrentScreenPoint`, `Editor#getContainer`.
+- Consumes: Task 8's paper and `deeskExtensions`; tldraw's `TaskList`, `TaskItem`, `TLRichText`, `Editor#inputs.getCurrentScreenPoint`, `Editor#getContainer`, `Editor#getViewportPageBounds`, `startEditingShapeWithRichText`, `TldrawUiButton`, `TldrawUiButtonIcon`.
 - Produces:
-  - `taskItems.ts`: `interface Box { left: number; top: number; right: number; bottom: number }`; `toggleTaskItem(richText: TLRichText, index: number): TLRichText` (a new document with the `index`th task item, counted depth-first from 0, ticked or unticked; the same object when there is no such item; never changes its input); `checkboxIndexAt(point: { x: number; y: number }, boxes: Box[], slop?: number): number` (the index of the first box containing the point, widened by `slop` pixels, or -1).
+  - `taskItems.ts`: `interface Box { left: number; top: number; right: number; bottom: number }`; `toggleTaskItem(richText: TLRichText, index: number): TLRichText` (a new document with the `index`th task item, counted depth-first from 0, ticked or unticked; the same object when there is no such item; never changes its input); `checkboxIndexAt(point: { x: number; y: number }, boxes: Box[], slop?: number): number`.
+  - `checklistAction.ts`: `type ChecklistAction = { kind: "toggle-line" } | { kind: "add-to-paper"; paperId: string } | { kind: "new-paper" } | { kind: "none" }`; `interface ChecklistContext { editingShapeId: string | null; editingIsPaper: boolean; onlySelectedPaperId: string | null }`; `chooseChecklistAction(ctx: ChecklistContext): ChecklistAction`; `interface ShortcutKey { code: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; isComposing?: boolean }`; `isChecklistShortcut(e: ShortcutKey): boolean`.
+  - `whenRichTextEditorReady.ts`: `whenRichTextEditorReady(editor: Editor, run: (textEditor: TextEditor) => void, framesLeft?: number): void` (calls `run` once tldraw's text editor exists; gives up after about 30 frames).
+  - `addChecklistItem.ts`: `addChecklistItem(editor: Editor): void`.
+  - `ChecklistControls.tsx`: `ChecklistButton(): JSX.Element` (the top-right button) and `ChecklistShortcut(): null` (the Cmd+Shift+9 listener, rendered inside `<Tldraw>`).
   - `PaperShapeUtil.onClick(shape)`.
   - `deeskExtensions` now also holds `TaskList` and `TaskItem.configure({ nested: true })`.
 
@@ -2267,9 +2283,78 @@ describe("checkboxIndexAt", () => {
 });
 ```
 
+Create `src/text/checklistAction.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { chooseChecklistAction, isChecklistShortcut, type ShortcutKey } from "./checklistAction";
+
+describe("chooseChecklistAction", () => {
+  it("toggles the current line while a paper is being edited", () => {
+    expect(
+      chooseChecklistAction({ editingShapeId: "shape:a", editingIsPaper: true, onlySelectedPaperId: "shape:a" }),
+    ).toEqual({ kind: "toggle-line" });
+  });
+
+  it("does nothing while something that is not a paper is being edited", () => {
+    expect(
+      chooseChecklistAction({ editingShapeId: "shape:t", editingIsPaper: false, onlySelectedPaperId: null }),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("adds a tick-box to the selected paper when nothing is being edited", () => {
+    expect(
+      chooseChecklistAction({ editingShapeId: null, editingIsPaper: false, onlySelectedPaperId: "shape:a" }),
+    ).toEqual({ kind: "add-to-paper", paperId: "shape:a" });
+  });
+
+  it("makes a new paper when no paper is selected", () => {
+    expect(
+      chooseChecklistAction({ editingShapeId: null, editingIsPaper: false, onlySelectedPaperId: null }),
+    ).toEqual({ kind: "new-paper" });
+  });
+
+  it("prefers the paper being edited over the selection", () => {
+    expect(
+      chooseChecklistAction({ editingShapeId: "shape:a", editingIsPaper: true, onlySelectedPaperId: "shape:b" }),
+    ).toEqual({ kind: "toggle-line" });
+  });
+});
+
+describe("isChecklistShortcut", () => {
+  const key = (extra: Partial<ShortcutKey> = {}): ShortcutKey => ({
+    code: "Digit9",
+    metaKey: true,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: true,
+    ...extra,
+  });
+
+  it("is Cmd+Shift+9, found by the physical key so any keyboard layout works", () => {
+    expect(isChecklistShortcut(key())).toBe(true);
+  });
+
+  it("also accepts Ctrl+Shift+9", () => {
+    expect(isChecklistShortcut(key({ metaKey: false, ctrlKey: true }))).toBe(true);
+  });
+
+  it("needs Shift and Cmd or Ctrl", () => {
+    expect(isChecklistShortcut(key({ shiftKey: false }))).toBe(false);
+    expect(isChecklistShortcut(key({ metaKey: false }))).toBe(false);
+  });
+
+  it("ignores other keys and Alt combinations", () => {
+    expect(isChecklistShortcut(key({ code: "Digit8" }))).toBe(false);
+    expect(isChecklistShortcut(key({ altKey: true }))).toBe(false);
+    expect(isChecklistShortcut(key({ isComposing: true }))).toBe(false);
+  });
+});
+```
+
 - [ ] **Step 2: Run to see them fail**
 
-Run: `npm test`. Expected: FAIL (`./taskItems` cannot be resolved; the schema has no `taskList` yet).
+Run: `npm test`. Expected: FAIL (`./taskItems` and `./checklistAction` cannot be resolved; the schema has no `taskList` yet).
 
 - [ ] **Step 3: The pure logic**
 
@@ -2323,7 +2408,50 @@ export function checkboxIndexAt(point: { x: number; y: number }, boxes: Box[], s
 }
 ```
 
-Run `npm test`. Expected: the `taskItems` tests pass (the schema test still fails).
+Create `src/text/checklistAction.ts`:
+
+```ts
+export type ChecklistAction =
+  | { kind: "toggle-line" }
+  | { kind: "add-to-paper"; paperId: string }
+  | { kind: "new-paper" }
+  | { kind: "none" };
+
+export interface ChecklistContext {
+  editingShapeId: string | null;
+  editingIsPaper: boolean;
+  onlySelectedPaperId: string | null;
+}
+
+// What the "add a tick-box" button and shortcut should do right now.
+export function chooseChecklistAction(ctx: ChecklistContext): ChecklistAction {
+  if (ctx.editingShapeId !== null) {
+    return ctx.editingIsPaper ? { kind: "toggle-line" } : { kind: "none" };
+  }
+  if (ctx.onlySelectedPaperId !== null) {
+    return { kind: "add-to-paper", paperId: ctx.onlySelectedPaperId };
+  }
+  return { kind: "new-paper" };
+}
+
+export interface ShortcutKey {
+  code: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  isComposing?: boolean;
+}
+
+// Cmd+Shift+9 (Ctrl+Shift+9 elsewhere). Found by the physical key, because Shift+9 types
+// ")" on a Danish keyboard, and the character would not match.
+export function isChecklistShortcut(e: ShortcutKey): boolean {
+  if (e.isComposing || e.altKey) return false;
+  return (e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "Digit9";
+}
+```
+
+Run `npm test`. Expected: the `taskItems` and `checklistAction` tests pass (the schema test still fails).
 
 - [ ] **Step 4: Switch on the task list extensions**
 
@@ -2333,8 +2461,8 @@ In `src/text/textOptions.ts`, import `TaskItem` and `TaskList` from `tldraw` and
 import { TaskItem, TaskList, getTipTapDefaultExtensions } from "tldraw";
 
 // tldraw's TipTap defaults (headers with the "# " markdown rule, bold with Cmd+B, italic,
-// lists, links), without Typography so characters stay exactly as typed, plus tick-boxes:
-// "[ ] " at the start of a line makes one, Tab nests it.
+// lists, links), without Typography so characters stay exactly as typed, plus tick-boxes
+// (Tab nests them; the app's button and Cmd+Shift+9 add them).
 export const deeskExtensions = [
   ...getTipTapDefaultExtensions().filter((e) => e.name !== "typography"),
   TaskList,
@@ -2342,7 +2470,7 @@ export const deeskExtensions = [
 ];
 ```
 
-Run `npm test`. Expected: all pass. Commit: `git add src/text && git commit -m "feat: tick-box logic and task list extensions"`.
+Run `npm test`. Expected: all pass. Commit: `git add src/text && git commit -m "feat: tick-box logic, action choice and task list extensions"`.
 
 - [ ] **Step 5: Tick a box by clicking it, without editing**
 
@@ -2448,22 +2576,184 @@ git add -A
 git commit -m "feat: tick-boxes on papers, ticked by clicking even when not editing"
 ```
 
-- [ ] **Step 7: User verifies by hand (agent starts `npm run tauri dev`)**
+- [ ] **Step 7: Adding a tick-box: the shared action, the shortcut and the top-right button**
+
+Create `src/text/whenRichTextEditorReady.ts`. tldraw's text editor appears a few frames after editing starts, so callers wait for it. Check the type name for the editor in the installed types (`Editor#getRichTextEditor` returns it) and use that type:
+
+```ts
+import type { Editor } from "tldraw";
+
+type TextEditor = NonNullable<ReturnType<Editor["getRichTextEditor"]>>;
+
+// Calls `run` once tldraw's text editor exists. Gives up after about 30 frames.
+export function whenRichTextEditorReady(
+  editor: Editor,
+  run: (textEditor: TextEditor) => void,
+  framesLeft = 30,
+) {
+  const textEditor = editor.getRichTextEditor();
+  if (textEditor) {
+    run(textEditor);
+    return;
+  }
+  if (framesLeft > 0) {
+    requestAnimationFrame(() => whenRichTextEditorReady(editor, run, framesLeft - 1));
+  }
+}
+```
+
+In `src/text/TypeToEditListener.tsx`, replace the local `insertWhenReady` function with a call to this helper (same behaviour: `focus("end")` first, then insert):
+
+```tsx
+      whenRichTextEditorReady(editor, (textEditor) =>
+        textEditor.chain().focus("end").insertContent(e.key).run(),
+      );
+```
+
+(import it from `./whenRichTextEditorReady`, and delete `insertWhenReady` and its comment). Run `npm test && npm run build` to confirm nothing changed.
+
+Create `src/text/addChecklistItem.ts`:
+
+```ts
+import { createShapeId, startEditingShapeWithRichText, type Editor, type TLShapeId } from "tldraw";
+import { paperPlacement } from "../shapes/paper/paperPlacement";
+import { PAPER_TYPE, type PaperShape } from "../shapes/paper/paperTypes";
+import { chooseChecklistAction } from "./checklistAction";
+import { isBlankRichText } from "./blankRichText";
+import { whenRichTextEditorReady } from "./whenRichTextEditorReady";
+
+// The button and Cmd+Shift+9 both do this. See chooseChecklistAction for the three cases.
+export function addChecklistItem(editor: Editor) {
+  const editingId = editor.getEditingShapeId();
+  const editingShape = editingId ? editor.getShape(editingId) : undefined;
+  const selected = editor.getOnlySelectedShape();
+
+  const action = chooseChecklistAction({
+    editingShapeId: editingId,
+    editingIsPaper: editingShape?.type === PAPER_TYPE,
+    onlySelectedPaperId: selected?.type === PAPER_TYPE ? selected.id : null,
+  });
+
+  switch (action.kind) {
+    case "toggle-line":
+      editor.getRichTextEditor()?.chain().focus().toggleTaskList().run();
+      return;
+
+    case "add-to-paper": {
+      const paper = editor.getShape(action.paperId as TLShapeId) as PaperShape | undefined;
+      if (!paper) return;
+      const blank = isBlankRichText(paper.props.richText);
+      startEditingShapeWithRichText(editor, paper);
+      whenRichTextEditorReady(editor, (textEditor) => {
+        const chain = textEditor.chain().focus("end");
+        // Start a new line for the new item, unless the paper is blank or already ends on one.
+        if (!blank && textEditor.state.doc.lastChild?.textContent.trim() !== "") {
+          chain.insertContentAt(textEditor.state.doc.content.size, { type: "paragraph" });
+        }
+        chain.focus("end").toggleTaskList().run();
+      });
+      return;
+    }
+
+    case "new-paper": {
+      const id = createShapeId();
+      const { x, y } = paperPlacement(editor.getViewportPageBounds().center);
+      editor.createShape({ id, type: PAPER_TYPE, x, y });
+      editor.select(id);
+      startEditingShapeWithRichText(editor, id);
+      whenRichTextEditorReady(editor, (textEditor) =>
+        textEditor.chain().focus("end").toggleTaskList().run(),
+      );
+      return;
+    }
+
+    case "none":
+      return;
+  }
+}
+```
+
+Create `public/checklist-icon.svg` (a box with a tick; tldraw colours icons itself):
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="black" stroke-width="1.5"/><path d="M8 12.5l3 3 5-6" fill="none" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+```
+
+Create `src/text/ChecklistControls.tsx`. Check the installed exports for `TldrawUiButton` and `TldrawUiButtonIcon` and their props (look at how `DefaultToolbar` or other built-in UI uses them) and adjust:
+
+```tsx
+import { useEffect } from "react";
+import { TldrawUiButton, TldrawUiButtonIcon, useEditor } from "tldraw";
+import { addChecklistItem } from "./addChecklistItem";
+import { isChecklistShortcut } from "./checklistAction";
+
+// The button in the top-right corner.
+export function ChecklistButton() {
+  const editor = useEditor();
+  return (
+    <div style={{ pointerEvents: "all" }}>
+      <TldrawUiButton
+        type="icon"
+        title="Add a tick-box (Cmd+Shift+9)"
+        onClick={() => addChecklistItem(editor)}
+      >
+        <TldrawUiButtonIcon icon="checklist-icon" />
+      </TldrawUiButton>
+    </div>
+  );
+}
+
+// Cmd+Shift+9. Capture phase, so it runs before tldraw's and TipTap's own handling, and
+// works the same whether or not a paper is being edited.
+export function ChecklistShortcut(): null {
+  const editor = useEditor();
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isChecklistShortcut(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      addChecklistItem(editor);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [editor]);
+
+  return null;
+}
+```
+
+In `src/shapes/registry.tsx`: add `"checklist-icon": "/checklist-icon.svg"` to `assetUrls.icons`, and add `SharePanel: ChecklistButton` to `uiComponents` (import `ChecklistButton` from `../text/ChecklistControls`). If `SharePanel` does not place the button in the top-right corner, try `TopPanel` or `MenuPanel` and note the choice in Findings.
+
+In `src/Desk.tsx`, import `ChecklistShortcut` and render it next to the other listeners inside `<Tldraw>`.
+
+Run `npm run build && npm test`. Expected: both pass. Commit:
+
+```bash
+git add -A
+git commit -m "feat: add a tick-box from a top-right button or Cmd+Shift+9"
+```
+
+- [ ] **Step 8: User verifies by hand (agent starts `npm run tauri dev`)**
 
 Give the user this list and wait for answers:
-1. **Make a checklist.** Edit a paper, type `[ ] ` at the start of a line and then some text: a tick-box appears. Press Enter for the next item. Press Enter on an empty item to leave the list. Also try `[x] ` (starts ticked) and Cmd+Shift+9.
-2. **Tick while editing** by clicking a box.
-3. **Tick without editing.** Stop editing and deselect the paper. Click a box: it ticks, the text turns grey and struck through, **and the paper does not get selected**. Click again: it unticks.
-4. **Undo and redo** (Cmd+Z, Cmd+Shift+Z) a tick.
-5. **Nesting.** Press Tab on an item to nest it and Shift+Tab to un-nest. Tick a nested item and an outer item: the right ones toggle.
-6. **Mixed content.** Put a header, a paragraph, a bullet list and a checklist in one paper. Tick the second box: exactly that one toggles.
-7. **Saving.** Tick some boxes, close with the red button, reopen: the ticks are still there.
-8. **Resizing and zoom.** Resize the paper: the boxes and text keep their size. Zoom in and out and tick a box at different zoom levels: it always hits the right one.
-9. **Nothing else broke.** Dragging an unselected paper still moves it in one go. A click on the text selects the paper (when you release the button). Shift-click still multi-selects. Double-click still edits, at the click point. Enter on a selected paper still edits.
-10. **Copy and paste** a paper that has a checklist: the copy ticks independently of the original.
-11. **A click just outside a box**, on the text, does not tick it.
+1. **The button.** A tick-box button appears in the top-right corner. Hovering shows what it does.
+2. **Nothing selected.** Click the button: a new paper appears at the centre of the view, in editing, with an empty tick-box. Type some text.
+3. **A paper selected.** Select a blank paper (single click) and click the button: its first line becomes a tick-box. Select a paper that has text and click the button: it goes into editing and a new tick-box is added at the end, with the cursor in it.
+4. **While editing.** Click into a line of a paper and click the button (or press Cmd+Shift+9): that line becomes a tick-box. Do it again: it goes back to a normal line.
+5. **Cmd+Shift+9** does the same in all three situations. It works on your keyboard layout.
+6. **Enter and Tab.** Enter adds the next item; Enter on an empty item leaves the list. Tab nests an item, Shift+Tab un-nests.
+7. **Tick while editing** by clicking a box.
+8. **Tick without editing.** Stop editing and deselect the paper. Click a box: it ticks, the text turns grey and struck through, **and the paper does not get selected**. Click again: it unticks.
+9. **Undo and redo** (Cmd+Z, Cmd+Shift+Z) a tick, and the adding of a tick-box.
+10. **Mixed content.** Put a header, a paragraph, a bullet list and a checklist in one paper. Tick the second box: exactly that one toggles. Tick a nested one: the right one toggles.
+11. **Saving.** Tick some boxes, close with the red button, reopen: the ticks are still there.
+12. **Resizing and zoom.** Resize the paper: the boxes and text keep their size. Zoom in and out and tick a box at different zoom levels: it always hits the right one.
+13. **Nothing else broke.** Dragging an unselected paper still moves it in one go. A click on the text selects the paper (when you release the button). Shift-click still multi-selects. Double-click still edits, at the click point. Enter on a selected paper still edits.
+14. **Copy and paste** a paper that has a checklist: the copy ticks independently of the original.
+15. **A click just outside a box**, on the text, does not tick it.
 
-- [ ] **Step 8: Commit and ask for confirmation**
+- [ ] **Step 9: Commit and ask for confirmation**
 
 Fix anything the hand test found (with a test wherever it can be tested without the canvas), commit, tick this task in the plan, record findings, and ask the user for explicit confirmation that Task 9 is done before starting Task 10.
 
