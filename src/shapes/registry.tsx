@@ -13,6 +13,7 @@ import {
   type TLUiOverrides,
 } from "tldraw";
 import { ChecklistButton } from "../text/ChecklistControls";
+import { DeeskArrowBindingUtil } from "./deeskArrowBinding";
 import { PAPER_TOOL_ID, PaperTool } from "./paper/PaperTool";
 import { PaperShapeUtil } from "./paper/PaperShapeUtil";
 
@@ -23,6 +24,9 @@ export const shapeUtils = [PaperShapeUtil];
 // not only ours (tldraw merges the two itself only for the <Tldraw shapeUtils> prop).
 export const storeShapeUtils = [...defaultShapeUtils, ...shapeUtils];
 export const customTools = [PaperTool];
+
+// Replaces tldraw's own arrow binding (same type), both in the editor and in the store.
+export const bindingUtils = [DeeskArrowBindingUtil];
 
 export const uiOverrides: TLUiOverrides = {
   tools(editor, tools) {

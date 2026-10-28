@@ -1,18 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Box, Editor, createShapeId, createTLStore, defaultBindingUtils } from "tldraw";
+import { Box, Editor, createShapeId, createTLStore } from "tldraw";
 import { installEditorTweaks } from "./editorTweaks";
-import { storeShapeUtils } from "./registry";
+import { bindingUtils, storeShapeUtils } from "./registry";
 
 let editors: Editor[] = [];
 
 function makeEditor(): Editor {
-  const store = createTLStore({ shapeUtils: storeShapeUtils, bindingUtils: defaultBindingUtils });
+  const store = createTLStore({ shapeUtils: storeShapeUtils, bindingUtils });
   const container = document.createElement("div");
   document.body.appendChild(container);
   const editor = new Editor({
     store,
     shapeUtils: storeShapeUtils,
-    bindingUtils: defaultBindingUtils,
+    bindingUtils,
     tools: [],
     getContainer: () => container,
   });
@@ -235,5 +235,77 @@ describe("removing the tweaks", () => {
     const { a, b, between } = drawScene(editor);
     editor.deleteShapes([a, b]);
     expect(editor.getShape(between)).toBeDefined();
+  });
+});
+
+describe("the stacking order of an arrow when its anchors come and go", () => {
+  // A lower paper and a higher paper, a box on each, and an arrow above both papers anchored
+  // to the two boxes. tldraw stacks an arrow directly above the highest shape it is anchored
+  // to, so when only the box on the lower paper is left as an anchor, tldraw drops the arrow
+  // to just above the lower paper: behind the higher one.
+  function drawStack(editor: Editor) {
+    const lowerPaper = createShapeId("lowerPaper");
+    const higherPaper = createShapeId("higherPaper");
+    const lowerBox = createShapeId("lowerBox");
+    const higherBox = createShapeId("higherBox");
+    const arrow = createShapeId("arrow");
+    editor.createShapes([
+      { id: lowerPaper, type: "paper", x: 0, y: 0 },
+      { id: higherPaper, type: "paper", x: 600, y: 0 },
+    ]);
+    editor.createShapes([
+      { id: lowerBox, type: "geo", parentId: lowerPaper, x: 50, y: 50, props: { w: 100, h: 100 } },
+      { id: higherBox, type: "geo", parentId: higherPaper, x: 50, y: 50, props: { w: 100, h: 100 } },
+      { id: arrow, type: "arrow", x: 100, y: 100 },
+    ]);
+    const anchor = (to: typeof lowerBox, terminal: "start" | "end") => ({
+      type: "arrow" as const,
+      fromId: arrow,
+      toId: to,
+      props: {
+        terminal,
+        normalizedAnchor: { x: 0.5, y: 0.5 },
+        isExact: false,
+        isPrecise: false,
+        snap: "none" as const,
+      },
+    });
+    editor.createBindings([anchor(lowerBox, "start"), anchor(higherBox, "end")]);
+    return { lowerPaper, higherPaper, lowerBox, higherBox, arrow };
+  }
+
+  const position = (editor: Editor, id: ReturnType<typeof createShapeId>) =>
+    editor.getCurrentPageShapesSorted().findIndex((s) => s.id === id);
+
+  it("brings a deleted box and arrow back in front of the paper with a single undo", () => {
+    const editor = makeEditor();
+    installEditorTweaks(editor);
+    const { higherPaper, lowerBox, higherBox, arrow } = drawStack(editor);
+    expect(position(editor, arrow)).toBeGreaterThan(position(editor, higherPaper));
+
+    editor.markHistoryStoppingPoint("delete the box on the higher paper");
+    editor.deleteShapes([higherBox]);
+    editor.markHistoryStoppingPoint("delete the box on the lower paper");
+    editor.deleteShapes([lowerBox]);
+    expect(editor.getShape(arrow)).toBeUndefined();
+
+    editor.undo();
+
+    expect(editor.getShape(lowerBox)).toBeDefined();
+    expect(editor.getShape(arrow)).toBeDefined();
+    expect(position(editor, arrow)).toBeGreaterThan(position(editor, higherPaper));
+  });
+
+  it("does not let an arrow sink behind a paper when it is anchored to a box again", () => {
+    const editor = makeEditor();
+    installEditorTweaks(editor);
+    const { higherPaper, higherBox, arrow } = drawStack(editor);
+
+    editor.markHistoryStoppingPoint("delete");
+    editor.deleteShapes([higherBox]);
+    editor.undo();
+
+    expect(editor.getShape(arrow)).toBeDefined();
+    expect(position(editor, arrow)).toBeGreaterThan(position(editor, higherPaper));
   });
 });

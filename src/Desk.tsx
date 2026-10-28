@@ -5,6 +5,7 @@ import { ZOOM_STEPS } from "./camera/springConfig";
 import { useDeskStore } from "./persistence/useDeskStore";
 import {
   assetUrls,
+  bindingUtils,
   customTools,
   shapeUtils,
   uiComponents,
@@ -27,6 +28,7 @@ export function Desk() {
       <Tldraw
         store={store}
         shapeUtils={shapeUtils}
+        bindingUtils={bindingUtils}
         tools={customTools}
         overrides={uiOverrides}
         components={uiComponents}
