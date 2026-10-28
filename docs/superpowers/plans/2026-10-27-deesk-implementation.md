@@ -1110,7 +1110,7 @@ Then report to the user what was verified and ask for explicit confirmation that
   - `spring.ts`: `interface Camera { x: number; y: number; z: number }`, `interface Point { x: number; y: number }`, `springTarget(zoom: number, msSinceLastChange: number): number | null`, `zoomAbout(camera: Camera, screenPoint: Point, newZoom: number): Camera`.
   - `ZoomSpring.tsx`: `ZoomSpring(): null`, a component to render inside `<Tldraw>`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `src/camera/spring.test.ts`. The tests read the limits from the config, so tuning the numbers later does not break them.
 
@@ -1208,11 +1208,11 @@ describe("zoomAbout", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `npm test`. Expected: FAIL, because `./spring` and `./springConfig` cannot be resolved.
 
-- [ ] **Step 3: Implement the config and the maths**
+- [x] **Step 3: Implement the config and the maths**
 
 Create `src/camera/springConfig.ts`:
 
@@ -1282,7 +1282,7 @@ export function zoomAbout(camera: Camera, screenPoint: Point, newZoom: number): 
 }
 ```
 
-- [ ] **Step 4: Run it to see it pass, then commit**
+- [x] **Step 4: Run it to see it pass, then commit**
 
 Run: `npm test`. Expected: PASS (all earlier tests plus the new ones).
 
@@ -1291,7 +1291,7 @@ git add src/camera
 git commit -m "feat: zoom spring maths and tuning constants"
 ```
 
-- [ ] **Step 5: Wire the spring into the editor**
+- [x] **Step 5: Wire the spring into the editor**
 
 Create `src/camera/ZoomSpring.tsx`. Before relying on it, check the installed types for `Editor#setCamera`, `Editor#getViewportScreenBounds` and the shape of `store.listen`'s `entry.changes.updated`, and adjust if they differ.
 
@@ -1360,14 +1360,14 @@ If tldraw's `options.camera` replaces the other camera defaults instead of mergi
 
 Run: `npm run build && npm test`. Expected: both pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
 git commit -m "feat: zoom spring eases the camera back inside the soft limits"
 ```
 
-- [ ] **Step 7: User verifies by hand (agent starts `npm run tauri dev`)**
+- [x] **Step 7: User verifies by hand (agent starts `npm run tauri dev`)**
 
 Give the user this list and wait for their answers:
 1. **Zoom in past the soft limit.** Zoom in with pinch or Cmd+scroll until it stops (about 800%). Let go. After a moment the view eases back to about 340%. The point at the centre of the window stays put while it eases.
@@ -1377,7 +1377,7 @@ Give the user this list and wait for their answers:
 5. **Zoom buttons and keyboard steps** (the zoom control and Cmd+plus / Cmd+minus): the steps still work, and the hard levels also spring back.
 6. **Feel.** Is it too early, too late, too fast or too slow? Say what to change. Every number is in `src/camera/springConfig.ts`, so tuning is a one-line change.
 
-- [ ] **Step 8: Tune and commit**
+- [x] **Step 8: Tune and commit**
 
 Adjust the constants in `src/camera/springConfig.ts` with the user until it feels right. Run `npm test` (the tests read the limits from the config), then commit: `git commit -am "tune: zoom spring numbers"`. Report what was verified and ask for explicit confirmation that Task 6 is done before starting Task 7.
 
@@ -1477,3 +1477,4 @@ Adjust the constants in `src/camera/springConfig.ts` with the user until it feel
 - **Environment note:** `! npm run tauri add fs` failed until `source "$HOME/.cargo/env"` was run first (the `!` shell had no cargo on PATH). `npm run tauri dev` is started by the agent with that line; the user cannot relaunch the dev app by clicking.
 - **Known limit:** autosave waits 0.5 s (view: 1 s) after the last change, so Cmd+Q within that window can lose the last edit; the red close button flushes first.
 - **Task 6 user feedback (2026-10-27):** the first version zoomed about the window centre, so content under the mouse drifted away as it eased back. Fixed: the spring now zooms about the mouse pointer (`springAnchor`, with a window-centre fallback). Quick repeated pinching during the ease-back cancels the animation by design (tldraw stops camera animations on user input).
+- **Task 6 done (2026-10-28), accepted by the user as "fine for now".** 41 automated tests pass. Known limitation, accepted: the spring starts only after the user stops zooming for `SPRING_IDLE_MS`, so continuous zoom spamming can stay past the soft limit indefinitely (up to the hard stops). Possible later improvement: a cap, so the spring also starts after N seconds past a limit even while the user keeps zooming. Numbers (soft 10%-400%, hard 5%-800%, 350 ms idle, rest factor 0.85, 450 ms animation) are unchanged from the proposal and live in `src/camera/springConfig.ts`.
