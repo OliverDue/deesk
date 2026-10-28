@@ -16,14 +16,17 @@ import { ChecklistButton } from "../text/ChecklistControls";
 import { DeeskArrowBindingUtil } from "./deeskArrowBinding";
 import { PAPER_TOOL_ID, PaperTool } from "./paper/PaperTool";
 import { PaperShapeUtil } from "./paper/PaperShapeUtil";
+import { StickerColorPicker } from "./sticker/StickerColorPicker";
+import { StickerShapeUtil } from "./sticker/StickerShapeUtil";
+import { STICKER_TOOL_ID, StickerTool } from "./sticker/StickerTool";
 
 // Everything Deesk adds to tldraw is listed here. Later shapes are added to these lists.
-export const shapeUtils = [PaperShapeUtil];
+export const shapeUtils = [PaperShapeUtil, StickerShapeUtil];
 
 // The desk store is created outside the editor, so it must list tldraw's own shapes too,
 // not only ours (tldraw merges the two itself only for the <Tldraw shapeUtils> prop).
 export const storeShapeUtils = [...defaultShapeUtils, ...shapeUtils];
-export const customTools = [PaperTool];
+export const customTools = [PaperTool, StickerTool];
 
 // Replaces tldraw's own arrow binding (same type), both in the editor and in the store.
 export const bindingUtils = [DeeskArrowBindingUtil];
@@ -37,6 +40,13 @@ export const uiOverrides: TLUiOverrides = {
       kbd: "p",
       onSelect: () => editor.setCurrentTool(PAPER_TOOL_ID),
     };
+    tools[STICKER_TOOL_ID] = {
+      id: STICKER_TOOL_ID,
+      icon: "sticker-icon",
+      label: "Sticker",
+      kbd: "s",
+      onSelect: () => editor.setCurrentTool(STICKER_TOOL_ID),
+    };
     return tools;
   },
 };
@@ -48,6 +58,7 @@ export const uiComponents: TLComponents = {
     <DefaultStylePanel {...props}>
       <DefaultStylePanelContent />
       <StylePanelSection>
+        <StickerColorPicker />
         <ChecklistButton />
       </StylePanelSection>
     </DefaultStylePanel>
@@ -55,9 +66,11 @@ export const uiComponents: TLComponents = {
   Toolbar: (props) => {
     const tools = useTools();
     const paperSelected = useIsToolSelected(tools[PAPER_TOOL_ID]);
+    const stickerSelected = useIsToolSelected(tools[STICKER_TOOL_ID]);
     return (
       <DefaultToolbar {...props}>
         <TldrawUiMenuItem {...tools[PAPER_TOOL_ID]} isSelected={paperSelected} />
+        <TldrawUiMenuItem {...tools[STICKER_TOOL_ID]} isSelected={stickerSelected} />
         <DefaultToolbarContent />
       </DefaultToolbar>
     );
@@ -65,5 +78,7 @@ export const uiComponents: TLComponents = {
 };
 
 export const assetUrls: TLUiAssetUrlOverrides = {
-  icons: { "paper-icon": "/paper-icon.svg", "checklist-icon": "/checklist-icon.svg" },
+  icons: { "paper-icon": "/paper-icon.svg", "checklist-icon": "/checklist-icon.svg",
+    "sticker-icon": "/sticker-icon.svg",
+  },
 };

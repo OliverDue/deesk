@@ -29,6 +29,11 @@ describe("paperClips", () => {
     expect(paperClips("arrow")).toBe(false);
   });
 
+  it("lets stickers overhang the paper's edge, like real ones", () => {
+    expect(paperClips("sticker")).toBe(false);
+    expect(paperAccepts("sticker", false)).toBe(true);
+  });
+
   it("lets freehand strokes run past the edge too, while staying part of the paper", () => {
     expect(paperClips("draw")).toBe(false);
     expect(paperClips("highlight")).toBe(false);
