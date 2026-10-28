@@ -83,6 +83,6 @@ body,
 
 /* The sticker colour dots need more room than tldraw's 148px style panel. */
 .tlui-style-panel:has([data-sticker-colors]) {
-  width: 244px;
-  max-width: 244px;
+  width: 264px;
+  max-width: 264px;
 }

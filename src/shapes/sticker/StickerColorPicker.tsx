@@ -26,6 +26,7 @@ export function StickerColorPicker() {
         <TldrawUiButton
           key={c.key}
           type="icon"
+          style={{ width: 32, minWidth: 32, height: 32 }}
           title={`Sticker: ${c.key}`}
           aria-pressed={current === c.key}
           onClick={() => choose(c.key)}
