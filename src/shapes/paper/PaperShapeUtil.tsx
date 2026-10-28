@@ -8,10 +8,14 @@ import {
   T,
   toRichText,
   useValue,
+  Vec,
+  type TLDragShapesOutInfo,
   type TLResizeInfo,
+  type TLShape,
 } from "tldraw";
 import { placeCaretAtPointer } from "../../text/placeCaret";
 import { checkboxIndexAt, toggleTaskItem } from "../../text/taskItems";
+import { paperAccepts, paperClipRect, paperClips } from "./paperContainer";
 import {
   PAPER_DEFAULT_HEIGHT,
   PAPER_DEFAULT_WIDTH,
@@ -76,6 +80,54 @@ export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
       type: PAPER_TYPE,
       props: { richText: toggleTaskItem(shape.props.richText, index) },
     } as const;
+  }
+
+  // The paper is a container for figures: boxes, lines, drawings and so on. tldraw makes a
+  // new shape drawn on the paper its child once this says yes.
+  override canReceiveNewChildrenOfType(shape: PaperShape, type: TLShape["type"]) {
+    return paperAccepts(type, shape.isLocked);
+  }
+
+  override canRemoveChildrenOfType(shape: PaperShape, _type: TLShape["type"]) {
+    return !shape.isLocked;
+  }
+
+  // Resizing the paper changes only the sheet. Figures keep their size and their place
+  // relative to its top-left corner, like the text, and are clipped at the new edge.
+  override canResizeChildren() {
+    return false;
+  }
+
+  override getClipPath(shape: PaperShape) {
+    return paperClipRect(shape.props.w, shape.props.h).map(({ x, y }) => new Vec(x, y));
+  }
+
+  override shouldClipChild(child: TLShape) {
+    return paperClips(child.type);
+  }
+
+  // Dragging a shape onto the paper makes it a figure on it.
+  override onDragShapesIn(shape: PaperShape, draggingShapes: TLShape[]) {
+    const incoming = draggingShapes.filter(
+      (s) => paperAccepts(s.type, shape.isLocked) && s.parentId !== shape.id,
+    );
+    if (incoming.length === 0) return;
+    // A shape that contains this paper (for example a group) cannot become its child.
+    if (incoming.some((s) => this.editor.hasAncestor(shape, s.id))) return;
+    this.editor.reparentShapes(incoming, shape.id);
+  }
+
+  // Dragging a figure off the paper makes it a desk shape again, unless it is being dragged
+  // straight onto another container.
+  override onDragShapesOut(
+    shape: PaperShape,
+    draggingShapes: TLShape[],
+    info: TLDragShapesOutInfo,
+  ) {
+    if (info.nextDraggingOverShapeId) return;
+    const leaving = draggingShapes.filter((s) => s.parentId === shape.id);
+    if (leaving.length === 0) return;
+    this.editor.reparentShapes(leaving, this.editor.getCurrentPageId());
   }
 
   // Only the frame changes on resize. The text is laid out at a fixed size, so it can
