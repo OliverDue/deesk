@@ -13,7 +13,9 @@ import {
   type TLResizeInfo,
   type TLShape,
 } from "tldraw";
-import { guardGlued, isGlued, withoutGlue } from "../../rules/glue";
+import { guardFixed, guardGlued, isGlued, withoutGlue } from "../../rules/glue";
+import { isPinGuardSuspended } from "../pin/pinSync";
+import { PIN_BINDING } from "../pin/pinTypes";
 import { placeCaretAtPointer } from "../../text/placeCaret";
 import { checkboxIndexAt, toggleTaskItem } from "../../text/taskItems";
 import { paperAccepts, paperClipRect, paperClips, paperKeepsInside } from "./paperContainer";
@@ -44,9 +46,14 @@ export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
     return true;
   }
 
-  // Glue: where a glued paper is and how big it is cannot change, from any source.
+  // A paper with a pin on it is fixed, like a glued one.
+  private isPinned(shape: PaperShape) {
+    return !isPinGuardSuspended() && this.editor.getBindingsToShape(shape, PIN_BINDING).length > 0;
+  }
+
+  // Glue and pins: where such a paper is and how big it is cannot change, from any source.
   override onBeforeUpdate(prev: PaperShape, next: PaperShape) {
-    return guardGlued(prev, next);
+    return this.isPinned(prev) ? guardFixed(prev, next, true) : guardGlued(prev, next);
   }
 
   // A copy (paste, duplicate) of a glued paper starts unglued.
@@ -55,11 +62,11 @@ export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
   }
 
   override canResize(shape: PaperShape) {
-    return !isGlued(shape);
+    return !isGlued(shape) && !this.isPinned(shape);
   }
 
   override hideRotateHandle(shape: PaperShape) {
-    return isGlued(shape);
+    return isGlued(shape) || this.isPinned(shape);
   }
 
   // tldraw's own double-click handling selects all the text when editing starts. Start

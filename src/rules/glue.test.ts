@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guardGlued, isGlued, nextGlueValue, withoutGlue, type GlueShape } from "./glue";
+import { guardFixed, guardGlued, isGlued, nextGlueValue, withoutGlue, type GlueShape } from "./glue";
 
 function shape(over: Partial<GlueShape> & { glued?: boolean } = {}): GlueShape {
   const { glued, ...rest } = over;
@@ -79,5 +79,20 @@ describe("withoutGlue", () => {
   it("returns the same shape when there is no glue", () => {
     const s = shape();
     expect(withoutGlue(s)).toBe(s);
+  });
+});
+
+describe("guardFixed", () => {
+  it("reverts position, rotation and size when the paper is fixed, glued or not", () => {
+    const prev = shape();
+    const next = shape({ x: 99, y: 98, rotation: 1, props: { w: 500, h: 600, richText: "b" } });
+    const out = guardFixed(prev, next, true);
+    expect([out.x, out.y, out.rotation, out.props.w, out.props.h]).toEqual([10, 20, 0, 300, 380]);
+    expect(out.props.richText).toBe("b");
+  });
+
+  it("passes the update through when the paper is not fixed", () => {
+    const next = shape({ x: 99 });
+    expect(guardFixed(shape(), next, false)).toBe(next);
   });
 });

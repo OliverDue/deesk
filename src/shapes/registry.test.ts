@@ -20,6 +20,13 @@ describe("desk store schema", () => {
     expect(sequences).toContain("com.tldraw.shape.paper");
   });
 
+  it("knows the sticker, the pin and the pin binding", () => {
+    const sequences = Object.keys(build().schema.serialize().sequences);
+    expect(sequences).toContain("com.tldraw.shape.sticker");
+    expect(sequences).toContain("com.tldraw.shape.pin");
+    expect(sequences).toContain("com.tldraw.binding.pin");
+  });
+
   it("round-trips a snapshot", () => {
     const snapshot = build().getStoreSnapshot("document");
     expect(() => build().loadStoreSnapshot(snapshot)).not.toThrow();

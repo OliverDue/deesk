@@ -1,9 +1,12 @@
 import { PAPER_TYPE } from "./paperTypes";
 
-// Whether a paper takes a shape of this type as one of its figures. Papers never nest, so
-// overlapping papers just stack; a locked paper accepts nothing.
+// Types that are never figures: papers never nest (overlapping papers just stack), and a pin
+// stays on the desk above the papers it pins. A locked paper accepts nothing.
+const NEVER_FIGURES = new Set([PAPER_TYPE, "pin"]);
+
+// Whether a paper takes a shape of this type as one of its figures.
 export function paperAccepts(type: string, isLocked: boolean): boolean {
-  return !isLocked && type !== PAPER_TYPE;
+  return !isLocked && !NEVER_FIGURES.has(type);
 }
 
 // Figure types that are not cut off at the paper's edge. Arrows can run from a paper to

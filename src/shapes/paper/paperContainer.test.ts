@@ -12,6 +12,10 @@ describe("paperAccepts", () => {
     expect(paperAccepts("paper", false)).toBe(false);
   });
 
+  it("never accepts a pin, which stays on the desk above the papers it pins", () => {
+    expect(paperAccepts("pin", false)).toBe(false);
+  });
+
   it("accepts nothing while locked", () => {
     expect(paperAccepts("geo", true)).toBe(false);
     expect(paperAccepts("arrow", true)).toBe(false);

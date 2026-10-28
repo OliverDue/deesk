@@ -12,11 +12,11 @@ export function isGlued(shape: Pick<GlueShape, "meta">): boolean {
   return shape.meta.glued === true;
 }
 
-// Applied to every update of a paper. While it stays glued, where it is and how big it is
-// cannot change, whatever the source (drag, arrow keys, handles); text and the rest can.
-// An update that removes the glue goes through as it is.
-export function guardGlued<T extends GlueShape>(prev: T, next: T): T {
-  if (!isGlued(prev) || !isGlued(next)) return next;
+// Applied to every update of a paper that must stay where it is (glued or pinned): where it
+// is and how big it is cannot change, whatever the source (drag, arrow keys, handles); text
+// and the rest can.
+export function guardFixed<T extends GlueShape>(prev: T, next: T, fixed: boolean): T {
+  if (!fixed) return next;
   return {
     ...next,
     x: prev.x,
@@ -24,6 +24,12 @@ export function guardGlued<T extends GlueShape>(prev: T, next: T): T {
     rotation: prev.rotation,
     props: { ...next.props, w: prev.props.w, h: prev.props.h },
   };
+}
+
+// The glue rule: fixed while the paper was glued and stays glued. An update that removes the
+// glue goes through as it is.
+export function guardGlued<T extends GlueShape>(prev: T, next: T): T {
+  return guardFixed(prev, next, isGlued(prev) && isGlued(next));
 }
 
 // What the Glue button does to the selected papers: glue them all, unless they all are
