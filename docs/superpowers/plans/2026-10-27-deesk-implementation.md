@@ -2794,7 +2794,7 @@ Fix anything the hand test found (with a test wherever it can be tested without 
   - `paperContainer.ts`: `paperAccepts(type: string, isLocked: boolean): boolean` (false for `"paper"` and when locked); `paperClips(type: string): boolean` (false only for `"arrow"`); `paperClipRect(w: number, h: number): { x: number; y: number }[]` (the four corners of the paper's rectangle, clockwise from the top-left).
   - `PaperShapeUtil` gains `canReceiveNewChildrenOfType`, `canRemoveChildrenOfType`, `canResizeChildren`, `getClipPath`, `shouldClipChild`, `onDragShapesIn`, `onDragShapesOut`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `src/shapes/paper/paperContainer.test.ts`:
 
@@ -2847,11 +2847,11 @@ describe("paperClipRect", () => {
 });
 ```
 
-- [ ] **Step 2: Run to see them fail**
+- [x] **Step 2: Run to see them fail**
 
 Run: `npm test`. Expected: FAIL (`./paperContainer` cannot be resolved).
 
-- [ ] **Step 3: The pure rules**
+- [x] **Step 3: The pure rules**
 
 Create `src/shapes/paper/paperContainer.ts`:
 
@@ -2883,7 +2883,7 @@ export function paperClipRect(w: number, h: number): { x: number; y: number }[] 
 
 Run `npm test`. Expected: PASS. Commit: `git add src/shapes/paper && git commit -m "feat: paper container rules"`.
 
-- [ ] **Step 4: Make the paper a container**
+- [x] **Step 4: Make the paper a container**
 
 In `src/shapes/paper/PaperShapeUtil.tsx`, import `Vec`, `type TLDragShapesOutInfo` and `type TLShape` from `tldraw`, and the three rules from `./paperContainer`. Check the installed types for each hook (`ShapeUtil.ts` in `@tldraw/editor`) and adjust if they differ. Add these methods to the class:
 
@@ -2940,7 +2940,7 @@ git add -A
 git commit -m "feat: figures drawn or dropped on a paper become part of it"
 ```
 
-- [ ] **Step 5: User verifies by hand (agent starts `npm run tauri dev`)**
+- [x] **Step 5: User verifies by hand (agent starts `npm run tauri dev`)**
 
 Give the user this list and wait for answers:
 1. **Drawing on a paper.** With the rectangle tool, draw a box on a paper. Move the paper: the box moves with it. Draw a box that sticks out over the paper's edge: the part outside is cut off.
@@ -2958,7 +2958,7 @@ Give the user this list and wait for answers:
 13. **Undo and redo** drawing a figure and dragging one in or out.
 14. **Selecting several papers.** A drag-to-select box over empty desk still selects papers the way it did before.
 
-- [ ] **Step 6: Commit and ask for confirmation**
+- [x] **Step 6: Commit and ask for confirmation**
 
 Fix anything the hand test found (with a test wherever it can be tested without the canvas), commit, tick this task in the plan, record findings, and ask the user for explicit confirmation that Task 10 is done before starting Task 11.
 
@@ -3055,3 +3055,5 @@ Fix anything the hand test found (with a test wherever it can be tested without 
 - **TECHNIQUE: a real tldraw `Editor` runs inside Vitest (jsdom).** `new Editor({ store, shapeUtils: storeShapeUtils, bindingUtils: defaultBindingUtils, tools: [], getContainer })` works, with `editor.updateViewportScreenBounds(new Box(0, 0, 1200, 800))` for hit-testing. `src/shapes/editorTweaks.test.ts` uses it to test deletion, arrow aiming, copy and undo end to end, including control tests that show the bug exists without the tweak. Prefer this to hand-testing whenever behaviour lives in the editor.
 - **Font (user, 2026-10-28): a clean system font, not Shantell Sans.** `src/text/deeskTheme.ts` overrides the default theme's `fonts` so that tldraw's `draw` and `sans` font styles use the same stack as the papers (`PAPER_FONT_FAMILY`), `serif` and `mono` use system serif and monospace, and no font has files to download. Existing boxes (saved with `font: draw`) change too, with no change to saved data. Passed to `<Tldraw themes={{ default: deeskTheme }}>`. This also removes tldraw's font downloads from the offline concern; the icons and other assets still come from the CDN (Task 18).
 - **Task 10: restored arrow ended up behind a paper after undo (user, 2026-10-28), and why.** tldraw's `ArrowBindingUtil` (`reparentArrow`) keeps an arrow stacked directly above the highest shape it is anchored to, and reapplies that whenever an anchor binding is created or changed, undo included. With one anchor deleted first, undoing the second deletion re-creates a binding to the box on the *lower* paper only, so tldraw dropped the arrow to just above that paper: behind the higher paper it had been in front of. Reproduced on a copy of the user's real desk, and with a minimal two-paper scene (both with and without the editor tweaks, so it is tldraw's rule, not ours). Fix: `DeeskArrowBindingUtil` (`src/shapes/deeskArrowBinding.ts`) extends `ArrowBindingUtil` and wraps the four hooks that restack (`onAfterCreate`, `onAfterChange`, `onAfterChangeFromShape`, `onAfterChangeToShape`) so an arrow is never *lowered*; it may still be raised. It replaces tldraw's arrow binding in both the editor (`<Tldraw bindingUtils>` replaces a default of the same `type`) and the store (`createTLStore({ bindingUtils })`); both use `bindingUtils` from `src/shapes/registry.tsx`. Side effect worth knowing: a newly drawn arrow now stays on top of everything instead of sinking to just above the shapes it connects.
+- **Task 10 done (2026-10-28), all hand checks passed by the user.** Papers are containers: shapes drawn or dropped on a paper become its figures (move, rotate, copy, delete and save with it), clipped at its edge except arrows and freehand strokes; papers never nest; resizing never scales figures, and a paper cannot be resized smaller than its clipped figures. Arrows aim at a box anywhere over it, connect figures on different papers, are deleted when their last anchor is deleted, are copied along with the papers they connect, and are never lowered behind a paper by tldraw's restacking rule. All text, in boxes and on papers, uses one system font. 145 automated tests pass, 13 of them against a real tldraw editor (see the TECHNIQUE note above).
+- **Open items carried forward:** Task 18 (self-host tldraw's icons and other assets for fully offline use; fonts are already local), a load-failure fallback for a saved desk that parses but fails tldraw's validation (see the Task 8 note), the hobby licence key before the trial ends around 2026-11-10, and the optional Task 9b (reorder tick-box items).
