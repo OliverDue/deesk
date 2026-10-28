@@ -1,14 +1,7 @@
-import { createShapeId, type Editor, type TLShapeId } from "tldraw";
+import { createShapeId, type Editor, type TLShape, type TLShapeId } from "tldraw";
 import { papersUnderPin, pinChanges, type PaperFrame } from "../../rules/pin";
 import { PAPER_TYPE, type PaperShape } from "../paper/paperTypes";
 import { PIN_BINDING, PIN_DIAMETER, PIN_TYPE } from "./pinTypes";
-
-// While tldraw pastes or duplicates, it creates the shapes and their bindings first and only
-// then shifts everything to the target place. A copied paper would already be pinned and the
-// shift would be refused, so the pinned-paper guard is suspended for the duration. The copied
-// pins re-pin what they land on when they are shifted (installPinSync).
-let guardSuspended = 0;
-export const isPinGuardSuspended = () => guardSuspended > 0;
 
 // Makes the pin pin exactly the papers under its centre: adds a binding for each paper newly
 // under it and removes the ones for papers it has left.
@@ -67,9 +60,9 @@ export function placePin(editor: Editor, point: { x: number; y: number }): TLSha
   return id;
 }
 
-// Re-syncs a pin whenever it moves (dragged, nudged, pasted into place), so it always pins what
-// is under it, and suspends the pinned-paper guard while pasting and duplicating. Returns a
-// function that undoes both.
+// Re-syncs a pin whenever it moves (dragged or nudged), so it always pins what is under it.
+// Also makes pins uncopyable: copy, cut-and-paste's copy and duplicate leave them out, and a
+// pin is never pasted. (Cut still deletes the pin.) Returns a function that undoes both.
 export function installPinSync(editor: Editor): () => void {
   const removeHandler = editor.sideEffects.registerAfterChangeHandler("shape", (prev, next) => {
     if (next.type !== PIN_TYPE) return;
@@ -77,23 +70,26 @@ export function installPinSync(editor: Editor): () => void {
     syncPin(editor, next.id);
   });
 
-  const suspending = <A extends unknown[], R>(fn: (...args: A) => R) =>
-    function (this: unknown, ...args: A): R {
-      guardSuspended += 1;
-      try {
-        return fn.apply(editor, args);
-      } finally {
-        guardSuspended -= 1;
-      }
-    };
-  const originalPut = editor.putContentOntoCurrentPage;
+  const withoutPins = (shapes: (TLShape | TLShapeId)[]): TLShapeId[] =>
+    shapes
+      .map((s) => (typeof s === "string" ? s : s.id))
+      .filter((id) => editor.getShape(id)?.type !== PIN_TYPE);
+
+  const originalContent = editor.getContentFromCurrentPage;
+  editor.getContentFromCurrentPage = function (shapes) {
+    const ids = withoutPins(shapes);
+    return ids.length === 0 ? undefined : originalContent.call(editor, ids);
+  };
+
   const originalDuplicate = editor.duplicateShapes;
-  editor.putContentOntoCurrentPage = suspending(originalPut) as typeof originalPut;
-  editor.duplicateShapes = suspending(originalDuplicate) as typeof originalDuplicate;
+  editor.duplicateShapes = function (shapes, offset) {
+    const ids = withoutPins(shapes);
+    return ids.length === 0 ? editor : originalDuplicate.call(editor, ids, offset);
+  };
 
   return () => {
     removeHandler();
-    editor.putContentOntoCurrentPage = originalPut;
+    editor.getContentFromCurrentPage = originalContent;
     editor.duplicateShapes = originalDuplicate;
   };
 }

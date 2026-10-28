@@ -14,7 +14,6 @@ import {
   type TLShape,
 } from "tldraw";
 import { guardFixed, guardGlued, isGlued, withoutGlue } from "../../rules/glue";
-import { isPinGuardSuspended } from "../pin/pinSync";
 import { PIN_BINDING } from "../pin/pinTypes";
 import { placeCaretAtPointer } from "../../text/placeCaret";
 import { checkboxIndexAt, toggleTaskItem } from "../../text/taskItems";
@@ -48,7 +47,7 @@ export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
 
   // A paper with a pin on it is fixed, like a glued one.
   private isPinned(shape: PaperShape) {
-    return !isPinGuardSuspended() && this.editor.getBindingsToShape(shape, PIN_BINDING).length > 0;
+    return this.editor.getBindingsToShape(shape, PIN_BINDING).length > 0;
   }
 
   // Glue and pins: where such a paper is and how big it is cannot change, from any source.

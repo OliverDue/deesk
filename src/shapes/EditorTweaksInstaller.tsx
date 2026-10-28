@@ -9,9 +9,10 @@ export function EditorTweaks(): null {
   useEffect(() => {
     const undoTweaks = installEditorTweaks(editor);
     const undoPinSync = installPinSync(editor);
+    // Undone in reverse order: both wrap the same editor methods.
     return () => {
-      undoTweaks();
       undoPinSync();
+      undoTweaks();
     };
   }, [editor]);
   return null;

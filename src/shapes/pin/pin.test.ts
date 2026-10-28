@@ -174,37 +174,49 @@ describe("moving a pin", () => {
   });
 });
 
-describe("copies", () => {
-  it("of a pinned paper alone are not pinned", () => {
+describe("pins cannot be copied", () => {
+  const pinsOnPage = (editor: Editor) =>
+    editor.getCurrentPageShapes().filter((s) => s.type === PIN_TYPE);
+
+  it("copying a pin alone gives nothing to paste", () => {
     const editor = makeEditor();
-    const a = paper(editor, "a", 0, 0);
-    placePin(editor, { x: 100, y: 100 });
-    const content = editor.getContentFromCurrentPage([a])!;
-    editor.putContentOntoCurrentPage(content, { point: { x: 900, y: 900 }, select: true });
-    const copy = editor.getCurrentPageShapes().find((s) => s.type === "paper" && s.id !== a)!;
-    expect(pinnedBy(editor, copy.id)).toBe(0);
+    paper(editor, "a", 0, 0);
+    const pin = placePin(editor, { x: 100, y: 100 });
+    const content = editor.getContentFromCurrentPage([pin]);
+    expect(content?.shapes ?? []).toHaveLength(0);
   });
 
-  it("of a pin together with its paper stay paired, and the paper stays fixed", () => {
+  it("copying a paper together with its pin leaves the pin out", () => {
     const editor = makeEditor();
     const a = paper(editor, "a", 0, 0);
     const pin = placePin(editor, { x: 100, y: 100 });
     const content = editor.getContentFromCurrentPage([a, pin])!;
+    expect(content.shapes.map((s) => s.type)).toEqual(["paper"]);
+    expect(content.bindings ?? []).toHaveLength(0);
     editor.putContentOntoCurrentPage(content, { point: { x: 900, y: 900 }, select: true });
+    expect(pinsOnPage(editor)).toHaveLength(1);
     const copy = editor.getCurrentPageShapes().find((s) => s.type === "paper" && s.id !== a)!;
-    expect(pinnedBy(editor, copy.id)).toBe(1);
+    expect(pinnedBy(editor, copy.id)).toBe(0);
     expect(pinnedBy(editor, a)).toBe(1);
-    // The copy landed where it was pasted, not stuck on the original.
-    expect(copy.x).not.toBe(0);
   });
 
-  it("of a pin and its paper by duplicate stay paired too", () => {
+  it("duplicating a pin makes no new pin", () => {
+    const editor = makeEditor();
+    paper(editor, "a", 0, 0);
+    const pin = placePin(editor, { x: 100, y: 100 });
+    editor.duplicateShapes([pin], { x: 50, y: 50 });
+    expect(pinsOnPage(editor)).toHaveLength(1);
+  });
+
+  it("duplicating a paper with its pin copies only the paper, unpinned and free to move", () => {
     const editor = makeEditor();
     const a = paper(editor, "a", 0, 0);
     const pin = placePin(editor, { x: 100, y: 100 });
     editor.duplicateShapes([a, pin], { x: 600, y: 0 });
+    expect(pinsOnPage(editor)).toHaveLength(1);
     const copy = editor.getCurrentPageShapes().find((s) => s.type === "paper" && s.id !== a)!;
     expect(copy.x).toBe(600);
-    expect(pinnedBy(editor, copy.id)).toBe(1);
+    expect(pinnedBy(editor, copy.id)).toBe(0);
+    expect(pinnedBy(editor, a)).toBe(1);
   });
 });
