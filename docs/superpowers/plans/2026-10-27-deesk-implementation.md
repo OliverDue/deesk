@@ -10,10 +10,38 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-27-deesk-design.md`. Read it before starting any task.
 
+## Current status (read this first)
+
+**Updated 2026-10-28. Tasks 1–10 are done and confirmed by the user.** 145 automated tests pass (`npm test`), and the build is clean (`npm run build`). The app works in development (`npm run tauri dev`); the packaged dock app needs a tldraw licence key (see below).
+
+**What exists today:** a Tauri 2 + React + tldraw desk (cream `#FFF6D8` table) with an infinite canvas and a zoom spring (Task 6); automatic saving of the desk and the last view (Task 5); **papers** you create with a toolbar button or `P` (Tasks 7–8): movable, resizable, rotatable sheets whose text never scales, written with markdown headers and bold, in a system font; **tick-boxes** added from a button in the style panel or Cmd+Shift+9, ticked by clicking even when the paper is not being edited (Task 9); and papers as **containers for figures** (Task 10): boxes, lines, drawings and arrows drawn on a paper belong to it, arrows connect figures across papers and are cleaned up when their last anchor goes, copies include connecting arrows, and a paper cannot shrink below its figures.
+
+**Next, in this order:** Task 11 (focus dim), 12 (stickers), 13 (glue), 14 (pin), 15 (images), 16 (command palette and search), 17 (themes and export). **Kept for the end, by the user's choice:** Task 18 (fully offline assets), Task 19 (load-failure fallback), the optional Task 7b (paper colours) and Task 9b (reorder tick-boxes), and one action item that is the user's: **get a longer-lived tldraw licence key before the 14-day trial key expires (around 2026-11-10)**. After that the packaged app shows a blank window until a valid key is in `.env.local` and the app is rebuilt; development is unaffected.
+
+**How to work on this (the loop the user and agent settled into):**
+1. Take the next roadmap task. Check the installed tldraw docs and source first (`node_modules/tldraw/DOCS.md`, and the sources under `node_modules/@tldraw/*/src`); do not rely on memory of the API (this is tldraw 5.5.2).
+2. Write the task's step-level plan into this file (the `superpowers:writing-plans` style: tests first, exact code, a hand-test list), commit it, and **show it to the user with the design choices that are theirs to make. Wait for an explicit "go".**
+3. Build it tests-first, run `npm test` and `npm run build`, commit, restart the dev app, and give the user the hand-test list.
+4. Fix what the user finds (a test first wherever it can be tested), commit, and **ask for explicit confirmation that the task is done** before starting the next. Then tick the task's boxes and add a dated note to **Findings** below.
+
+**Rules that have been set (all in effect; the memory files hold them too):**
+- Commits are authored as `lio@live.dk` through the repo-local git config, and carry **no Co-Authored-By or attribution trailer**.
+- The agent **never runs `gh` and never pushes**; the user does all GitHub work.
+- The agent **never reads `.env.local`** (the tldraw licence key).
+- The user does every download and install; the agent tells them the command. The user tests all interactions by hand.
+- Automated background-task notices ("exited with code ...") are **not** user messages and never count as approval. A notice that the dev app exited usually means the user closed it.
+- **Never name two files so that they differ only by capital letters** (macOS treats them as the same file).
+- Run the dev app from the project folder with Rust's path loaded: `cd /Users/oliverduenielsen/deesk && source "$HOME/.cargo/env" && npm run tauri dev` (in the background, so exit notices arrive). To restart: `pkill -x deesk; pkill -f "tauri dev"; pkill -f vite`, then start it again. A shell left inside another folder makes `npm` fail with "Missing script: tauri".
+- The user has a Danish keyboard: `[` and `]` need Option+Shift, and Shift+9 types `)`, so shortcuts are matched by physical key (`event.code`).
+
+**Where things are:** `src/Desk.tsx` assembles the editor. `src/shapes/registry.tsx` lists everything Deesk adds to tldraw (shape utils, tools, toolbar and style-panel components, icons, `bindingUtils`); `storeShapeUtils` is what the desk store must be built with. `src/shapes/paper/` is the paper (types, container rules, minimum size, placement). `src/shapes/editorTweaks.ts` holds the deliberate patches of tldraw editor methods (arrow aiming, copy, arrow cleanup), and `src/shapes/deeskArrowBinding.ts` the arrow stacking rule. `src/text/` is everything about text, tick-boxes, the system font theme and the keyboard ways into writing. `src/persistence/` is saving and loading. `src/camera/` is the zoom spring.
+
+**Hard-won technical lessons** (details are in Findings): a real tldraw `Editor` runs inside Vitest, which makes editor behaviour testable (see the TECHNIQUE note); the desk store must list tldraw's own shapes too (`storeShapeUtils`); adding a prop to a saved shape needs a migration (or the user deleting old shapes); tldraw's "frame-like" base class makes a shape's body click-through, so papers do not use it; when behaviour is surprising, reproduce it in the headless editor (and, if needed, on an in-memory copy of the user's desk, printing ids only, never their text) before fixing.
+
 ## How this plan is organised
 
 - **Part 1 (Tasks 1–4)** is fully detailed and executable as written. Its deliverable is the first milestone: open the app from the dock and see an empty tldraw table canvas coloured `#FFF6D8`.
-- **Part 2 (Tasks 5–17)** is a roadmap. Each task states its goal, files, interfaces and acceptance criteria, but the step-level TDD detail is written just before executing it. Those steps depend on the exact API of the installed tldraw version (5.x at the time of writing), which must be checked against its docs at that time. Expand a Part 2 task with `superpowers:writing-plans` (add the steps under the task, in this file) before implementing it. Do not guess tldraw APIs from memory.
+- **Part 2 (Tasks 5–19)** is a roadmap. Each task states its goal, files, interfaces and acceptance criteria, but the step-level TDD detail is written just before executing it. Those steps depend on the exact API of the installed tldraw version (5.x at the time of writing), which must be checked against its docs at that time. Expand a Part 2 task with `superpowers:writing-plans` (add the steps under the task, in this file) before implementing it. Do not guess tldraw APIs from memory.
 - Tick `- [ ]` boxes in this file as steps complete, so another session can resume from the file alone.
 
 ## Working agreement (set by the user)
@@ -2963,18 +2991,21 @@ Give the user this list and wait for answers:
 Fix anything the hand test found (with a test wherever it can be tested without the canvas), commit, tick this task in the plan, record findings, and ask the user for explicit confirmation that Task 10 is done before starting Task 11.
 
 ### Task 11: Focus dim
+- **Notes from Tasks 7–10 for step-level planning:** the edited paper's own figures (its children) must stay undimmed as well as the paper itself; dimming must not change hit-testing (clicking a dimmed shape should still work and select it); find out how tldraw marks shapes in the DOM (`data-shape-id` on the shape wrappers) and whether an opacity change on a container class is enough, rather than changing shape opacity records (which would be saved). The editing state is `editor.getEditingShapeId()`; read it with `useValue`. Tick-box editing and the checklist button also go through editing, so check they behave. Test the camera claim with the headless editor (`editor.getCamera()` before and after starting to edit).
 
 - **Goal:** while editing a paper, every other shape is dimmed. The camera never moves.
 - **Files:** `src/focus/useFocusDim.ts`, styles. A test asserts the camera is unchanged before and after focusing a paper.
 - **Acceptance:** dim on edit, restored on exit, no camera change.
 
 ### Task 12: Stickers
+- **Notes:** add the shape util to `shapeUtils` in `src/shapes/registry.tsx` (`storeShapeUtils` picks it up); papers already accept every type except `paper`, so a sticker dropped or drawn on a paper becomes its figure; decide whether stickers are clipped at a paper's edge (`paperClips` in `src/shapes/paper/paperContainer.ts`: arrows and strokes are exempt, everything else is clipped). A toolbar entry follows the `PaperTool` pattern (tool class, `uiOverrides.tools`, `Toolbar` component, icon in `assetUrls.icons`). All text must use the system font (`deeskTheme`). A new shape type is saved in `desk.json`, so an older build cannot open that desk.
 
 - **Goal:** small coloured circles from a fixed palette, placeable on the desk or on a paper.
 - **Files:** `src/shapes/sticker/StickerShapeUtil.tsx`, `src/shapes/sticker/palette.ts`, a toolbar entry.
 - **Acceptance:** place stickers in each colour; they persist and can sit on papers.
 
 ### Task 13: Glue
+- **Notes (important):** do **not** assume tldraw's `isLocked` is the right tool. A locked shape is skipped by hit-testing (`hitLocked` is false by default), so a locked paper cannot be selected or clicked, which would break tick-box clicks and un-gluing; and `paperAccepts` / `canRemoveChildrenOfType` in `src/shapes/paper/paperContainer.ts` already treat `isLocked` as "takes and releases no figures". Look at `ShapeUtil.canResize`, `canTranslate`-style hooks and `onTranslateStart`/`onResize` to block moving and resizing while keeping the paper clickable, and decide whether a glued paper still accepts figures. A new `glued` prop on the paper needs a **migration** for papers already saved (see the Task 8 note), unless the flag lives in `meta`. The visual cue must not be a text or layout change (text never scales).
 
 - **Goal:** a per-paper toggle that blocks move and resize, with a small visual cue.
 - **Files:** `src/rules/glue.ts` (pure: can this shape move or resize?), integration in `PaperShapeUtil`, tests in `src/rules/glue.test.ts`.
@@ -2982,6 +3013,7 @@ Fix anything the hand test found (with a test wherever it can be tested without 
 - **Acceptance:** a glued paper cannot be dragged or resized until unglued.
 
 ### Task 14: Pin
+- **Notes (important):** a pin is a shape of a new type, and papers accept every type except `paper`, so **a pin dropped or drawn on a paper would become that paper's figure** (it would move with the paper and be clipped). Add the pin type to the rejected types in `paperAccepts` (with a test) before anything else. "Which papers are under a pin" must use page-space geometry (`editor.getShapePageBounds`), including rotated papers. Pinned papers must stay clickable (see the glue note on `isLocked`). Deleting a pin must release its papers; use the same wrap-`deleteShapes` pattern as in `src/shapes/editorTweaks.ts` if a delete callback does not see what is needed (tldraw removes related records before callbacks run).
 
 - **Goal:** a pin-icon shape. Placing it pins every paper under it. Removing it releases them.
 - **Files:** `src/shapes/pin/PinShapeUtil.tsx`, `src/rules/pin.ts` (pure: which papers lie under a pin point; pinned set), tests in `src/rules/pin.test.ts`.
@@ -2989,22 +3021,37 @@ Fix anything the hand test found (with a test wherever it can be tested without 
 - **Acceptance:** place a pin over several papers, none can move. Delete the pin and they all can. Persists across relaunch.
 
 ### Task 15: Images and assets folder
+- **Notes:** papers already accept `image`. `PasteOffset` (`src/shapes/PasteOffsetHandler.tsx`) only wraps tldraw-content paste; files and images arrive through other external-content handlers. The Tauri fs permissions are scoped to the app data folder (`src-tauri/capabilities/default.json`, `fs:scope-appdata` and `-recursive` plus six `fs:allow-*` permissions); an `assets/` folder inside it needs no new scope but may need the `fs:allow-remove`/`read-file`/`write-file` permissions. Check the saved file size growth, and test the missing-file case with the headless editor.
 
 - **Goal:** paste or drop images onto the desk or a paper. Files are stored in `assets/` beside `desk.json`.
 - **Files:** `src/persistence/assets.ts`, Tauri fs scope update, tests for asset path handling.
 - **Acceptance:** an image survives relaunch and the app stays usable if an asset file is missing (placeholder, no crash).
 
 ### Task 16: Command palette, search and built-in canvas aids
+- **Notes:** all of a paper's text is in `props.richText` (TipTap JSON); `src/text/blankRichText.ts` already walks it to collect text (its `collectText` is not exported yet). Searching must not move the camera by itself: jump only when the user picks a result. Cmd+K must not clash with the capture-phase key listeners (`TypeToEditListener`, `ChecklistShortcut`); match by `event.code` as the checklist shortcut does.
 
 - **Goal:** Cmd+K palette, search across paper text, and tldraw's minimap, snapping and alignment guides switched on.
 - **Files:** `src/palette/CommandPalette.tsx`, `src/search/index.ts`, tests for the search index.
 - **Acceptance:** Cmd+K opens the palette; searching finds papers by text and jumps there only when the user picks a result (an explicit user action, not an automatic camera move).
 
 ### Task 17: Themes and export
+- **Notes:** `src/text/deeskTheme.ts` already overrides tldraw's default theme (fonts only); extend it for a dark theme rather than adding a second mechanism. The table colour is the CSS variable `--deesk-table` (`src/theme.ts`, `src/index.css`) and `colorScheme="light"` is set explicitly in `src/Desk.tsx`. The paper colour is a fixed `#fffdf5` in `.paper` in `src/index.css` (Task 7b would make it a choice). `getContentFromCurrentPage` is patched in `src/shapes/editorTweaks.ts` and is also used by export, so exports include arrows that connect copied papers.
 
 - **Goal:** a light and dark theme (the table colour for dark is chosen then), plus export of papers or the desk as PNG, SVG and Markdown.
 - **Files:** `src/theme.ts` (extend), `src/export/*.ts`, tests for the Markdown exporter.
 - **Acceptance:** the theme toggle works and persists; each export format produces a valid file.
+
+### Task 18: Fully offline (self-host tldraw's assets)
+
+- **Goal:** the app looks and works the same with the network off. **Finding (2026-10-28):** tldraw's docs say its fonts and other static assets "are loaded automatically from the CDN or self-hosted static assets". The fonts are already local (`src/text/deeskTheme.ts` uses system fonts and has no font files to download). The icons and the remaining assets still default to the CDN.
+- **How:** build `assetUrls` with `getAssetUrlsByImport()` from `@tldraw/assets/imports.vite` (it bundles the files with Vite) and merge it with the app's own icons in `src/shapes/registry.tsx` (`assetUrls`, which holds `paper-icon` and `checklist-icon`); pass the result as the `assetUrls` prop in `src/Desk.tsx`. Check the installed docs (`node_modules/tldraw/DOCS.md`, "Static assets") for the exact import and for the Tauri content-security setting (`csp` is `null` in `src-tauri/tauri.conf.json` today).
+- **Acceptance:** with Wi-Fi off, the whole interface shows its icons and text correctly, in both `npm run tauri dev` and the packaged app. The user checks this by hand; also look for any request to an outside address in the webview's network tab.
+
+### Task 19: Load-failure fallback
+
+- **Goal:** a saved desk that parses as JSON but is rejected by tldraw (for example a paper in an old format, or a shape type the code no longer has) does not leave a blank window. **Finding:** `useDeskStore` (`src/persistence/useDeskStore.ts`) throws inside `loadSnapshot`, the hook never resolves, and the window stays blank; the backup fallback in `loadDesk` only covers unreadable JSON.
+- **How:** treat a rejected snapshot like an unreadable file: catch the error from `loadSnapshot`, move the desk file aside (`desk.unreadable-<time>.json`, never deleted), try `desk.backup.json` the same way, and otherwise start empty; never save over a desk that failed to load until the fallback has run. Test with the real store (`createTLStore({ shapeUtils: storeShapeUtils, bindingUtils })`) and the in-memory file system used in `src/persistence/deskStore.test.ts`.
+- **Acceptance:** a deliberately broken-but-valid-JSON `desk.json` opens with the backup (or empty), the broken file is kept, and the user can see that this happened.
 
 ---
 
