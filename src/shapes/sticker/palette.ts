@@ -13,5 +13,6 @@ export const STICKER_COLOR_KEYS = STICKER_COLORS.map((c) => c.key) as readonly S
 export const STICKER_DEFAULT_COLOR: StickerColorKey = "red";
 
 export function stickerColor(key: string) {
-  return STICKER_COLORS.find((c) => c.key === key) ?? STICKER_COLORS[0];
+  const find = (k: string) => STICKER_COLORS.find((c) => c.key === k);
+  return find(key) ?? find(STICKER_DEFAULT_COLOR)!;
 }
