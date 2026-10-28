@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isTypeToEditKey, type KeyInfo } from "./typeToEdit";
+import { isEnterToEditKey, isTypeToEditKey, type KeyInfo } from "./typeToEdit";
 
 const key = (k: string, extra: Partial<KeyInfo> = {}): KeyInfo => ({
   key: k,
@@ -38,5 +38,24 @@ describe("isTypeToEditKey", () => {
 
   it("does not interfere with text composition", () => {
     expect(isTypeToEditKey(key("a", { isComposing: true }))).toBe(false);
+  });
+});
+
+describe("isEnterToEditKey", () => {
+  it("starts editing on a plain Enter", () => {
+    expect(isEnterToEditKey(key("Enter"))).toBe(true);
+  });
+
+  it("ignores Enter with a modifier, so shortcuts keep working", () => {
+    expect(isEnterToEditKey(key("Enter", { metaKey: true }))).toBe(false);
+    expect(isEnterToEditKey(key("Enter", { ctrlKey: true }))).toBe(false);
+    expect(isEnterToEditKey(key("Enter", { altKey: true }))).toBe(false);
+    expect(isEnterToEditKey(key("Enter", { shiftKey: true }))).toBe(false);
+  });
+
+  it("ignores other keys and text composition", () => {
+    expect(isEnterToEditKey(key("a"))).toBe(false);
+    expect(isEnterToEditKey(key("Escape"))).toBe(false);
+    expect(isEnterToEditKey(key("Enter", { isComposing: true }))).toBe(false);
   });
 });

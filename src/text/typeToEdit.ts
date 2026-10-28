@@ -3,6 +3,7 @@ export interface KeyInfo {
   metaKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
+  shiftKey?: boolean;
   isComposing: boolean;
 }
 
@@ -13,4 +14,10 @@ export function isTypeToEditKey(e: KeyInfo): boolean {
   if (e.metaKey || e.ctrlKey || e.isComposing) return false;
   if (e.key === " ") return false;
   return [...e.key].length === 1;
+}
+
+// Plain Enter on a selected paper starts editing. With any modifier it is a shortcut.
+export function isEnterToEditKey(e: KeyInfo): boolean {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.isComposing) return false;
+  return e.key === "Enter";
 }
