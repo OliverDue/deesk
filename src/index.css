@@ -38,8 +38,10 @@ body,
   padding-left: 0;
 }
 
+/* A nested list already sits inside its parent's text column (past the parent's box and
+   gap), so it needs no indent of its own: the nested box lines up under the parent's text. */
 .paper ul[data-type="taskList"] ul[data-type="taskList"] {
-  padding-left: 1.5em;
+  padding-left: 0;
 }
 
 .paper ul[data-type="taskList"] > li {
