@@ -3001,7 +3001,7 @@ Built in `src/shapes/sticker/` (`palette.ts`, `stickerTypes.ts` with the `deesk:
 - **Files:** `src/shapes/sticker/StickerShapeUtil.tsx`, `src/shapes/sticker/palette.ts`, a toolbar entry.
 - **Acceptance:** place stickers in each colour; they persist and can sit on papers.
 
-### Task 13: Glue
+### Task 13: Glue — BUILT, hand test passed 2026-10-28 apart from three fixes (done): gluing sends the paper to the back (`glueAction.ts`); a paper cannot be resized away from a sticker (`paperKeepsInside`, `clampToSheet`); the tick-box button and shortcut do nothing while a paper is only selected, the button is greyed out (user's choice; the old `add-to-paper` action was removed). Awaiting the user's confirmation.
 - **Notes (important):** do **not** assume tldraw's `isLocked` is the right tool. A locked shape is skipped by hit-testing (`hitLocked` is false by default), so a locked paper cannot be selected or clicked, which would break tick-box clicks and un-gluing; and `paperAccepts` / `canRemoveChildrenOfType` in `src/shapes/paper/paperContainer.ts` already treat `isLocked` as "takes and releases no figures". Look at `ShapeUtil.canResize`, `canTranslate`-style hooks and `onTranslateStart`/`onResize` to block moving and resizing while keeping the paper clickable, and decide whether a glued paper still accepts figures. A new `glued` prop on the paper needs a **migration** for papers already saved (see the Task 8 note), unless the flag lives in `meta`. The visual cue must not be a text or layout change (text never scales).
 
 - **Goal:** a per-paper toggle that blocks move and resize, with a small visual cue.

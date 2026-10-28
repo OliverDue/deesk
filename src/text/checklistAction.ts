@@ -1,6 +1,5 @@
 export type ChecklistAction =
   | { kind: "toggle-line" }
-  | { kind: "add-to-paper"; paperId: string }
   | { kind: "new-paper" }
   | { kind: "none" };
 
@@ -15,9 +14,8 @@ export function chooseChecklistAction(ctx: ChecklistContext): ChecklistAction {
   if (ctx.editingShapeId !== null) {
     return ctx.editingIsPaper ? { kind: "toggle-line" } : { kind: "none" };
   }
-  if (ctx.onlySelectedPaperId !== null) {
-    return { kind: "add-to-paper", paperId: ctx.onlySelectedPaperId };
-  }
+  // A selected paper takes tick-boxes only once it is being written in.
+  if (ctx.onlySelectedPaperId !== null) return { kind: "none" };
   return { kind: "new-paper" };
 }
 

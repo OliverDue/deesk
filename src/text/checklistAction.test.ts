@@ -14,10 +14,10 @@ describe("chooseChecklistAction", () => {
     ).toEqual({ kind: "none" });
   });
 
-  it("adds a tick-box to the selected paper when nothing is being edited", () => {
+  it("does nothing while a paper is only selected, until it is being written in", () => {
     expect(
       chooseChecklistAction({ editingShapeId: null, editingIsPaper: false, onlySelectedPaperId: "shape:a" }),
-    ).toEqual({ kind: "add-to-paper", paperId: "shape:a" });
+    ).toEqual({ kind: "none" });
   });
 
   it("makes a new paper when no paper is selected", () => {
