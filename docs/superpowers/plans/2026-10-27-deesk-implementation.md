@@ -1726,23 +1726,24 @@ Fix anything the hand test found (with a test where the problem can be tested wi
 **How (decided from tldraw 5.5.2's source and docs):** tldraw already ships a TipTap-based rich text editor, and its select tool starts editing automatically for any shape that has a `richText` prop and allows editing (double-click, or Enter on a selected shape). So a paper gets a `richText` prop and renders it through tldraw's `RichTextLabel`, which handles display and editing, undo, copy and paste. **No separate `@tiptap/*` package is installed:** tldraw's docs warn that a second copy of TipTap or ProseMirror makes ProseMirror throw. The default extensions already include headings (the `# ` markdown rule), bold (Cmd+B), italic, lists and links. `RichTextLabel` renders nothing for an empty, non-editing paper, so a fresh paper stays blank.
 
 **Design decisions (proposed, to be confirmed by the user)**
-- **Start editing:** double-click a paper, or select it and press Enter. This is tldraw's standard behaviour for text.
+- **Start editing:** double-click a paper, press Enter on a selected paper, **or just start typing while exactly one paper is selected** (user request). The first typed character is kept. Accepted trade-off: while one paper is selected, single-letter tool shortcuts (v, d, r, p, ...) type text instead; Cmd shortcuts and the toolbar are unaffected, and Escape or a click on the desk deselects. Space (tldraw's pan key), Enter, Backspace, Delete and the arrow keys are not treated as typing.
 - **Stop editing:** Escape, or click anywhere outside the paper. The paper stays selected after Escape.
 - **Empty paper:** stays blank, with no placeholder text.
 - **Typing rules:** keep tldraw's defaults except **Typography is turned off**, so quotes and dashes stay exactly as typed (no curly quotes, no `--` turning into a dash). Easy to turn back on in one line.
 - **Font:** system font, 16 px, line height 1.5, text colour `#2b2b2b`, padding 16 px. Headers scale with tldraw's own heading styles.
-- **Existing papers need a migration.** Papers saved in Task 7 have only `w` and `h`. Adding `richText` without a migration would make loading the saved desk fail. A migration gives old papers an empty `richText`, and a test loads an old-format paper to prove it.
+- **No migration (user decision):** the user deleted the old papers, and `desk.json` and `desk.backup.json` were checked on 2026-10-28 and contain none. A desk that still held a paper saved before this task would fail to load, because that paper has no text.
 
 **Files:**
-- Create: `src/shapes/paper/paperMigrations.ts`, `src/shapes/paper/paperMigrations.test.ts`
+- Create: `src/text/typeToEdit.ts`, `src/text/typeToEdit.test.ts`, `src/text/TypeToEdit.tsx`
 - Create: `src/text/textOptions.ts`, `src/text/textOptions.test.ts`
 - Modify: `src/shapes/paper/paperTypes.ts`, `src/shapes/paper/PaperShapeUtil.tsx`, `src/shapes/paper/paper.test.ts`, `src/Desk.tsx`, `src/index.css`
 
 **Interfaces:**
-- Consumes: Task 7's paper (`PaperShape`, `PaperShapeUtil`, `storeShapeUtils` from `src/shapes/registry.tsx`); tldraw's `RichTextLabel`, `richTextValidator`, `toRichText`, `TLRichText`, `getTipTapDefaultExtensions`, `createShapePropsMigrationIds`, `createShapePropsMigrationSequence`.
+- Consumes: Task 7's paper (`PaperShape`, `PaperShapeUtil`, `storeShapeUtils` from `src/shapes/registry.tsx`); tldraw's `RichTextLabel`, `richTextValidator`, `toRichText`, `TLRichText`, `getTipTapDefaultExtensions`, `startEditingShapeWithRichText`.
 - Produces:
   - `paperTypes.ts`: paper props become `{ w: number; h: number; richText: TLRichText }`; new constants `PAPER_LINE_HEIGHT` (1.5), `PAPER_PADDING_PX` (16), `PAPER_TEXT_COLOR` (`#2b2b2b`), `PAPER_FONT_FAMILY` (`system-ui, sans-serif`).
-  - `paperMigrations.ts`: `paperMigrations` (a shape props migration sequence whose first step adds an empty `richText`).
+  - `typeToEdit.ts`: `isTypeToEditKey(e: KeyInfo): boolean` where `KeyInfo = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; isComposing: boolean }`.
+  - `TypeToEdit.tsx`: `TypeToEdit(): null`, a component rendered inside `<Tldraw>` that starts editing the selected paper when the user starts typing.
   - `textOptions.ts`: `deeskExtensions` (the TipTap extension list: tldraw's defaults without Typography); Task 9 adds the checklist extensions here.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1767,60 +1768,6 @@ and replace the "starts at the default size" expectation with:
 
 (add `import { toRichText } from "tldraw";` at the top of that file).
 
-Create `src/shapes/paper/paperMigrations.test.ts`. This builds a snapshot in the old format (a paper with only `w` and `h`, and the schema recording the paper at version 0), loads it into the real desk store, and checks it migrates. If tldraw's snapshot or schema shapes differ from what is written here, adapt the construction (print `newStore().getStoreSnapshot("document")` to see the real format) but keep the intent:
-
-```ts
-import { describe, it, expect } from "vitest";
-import { createTLStore, defaultBindingUtils, toRichText } from "tldraw";
-import { storeShapeUtils } from "../registry";
-
-const newStore = () =>
-  createTLStore({ shapeUtils: storeShapeUtils, bindingUtils: defaultBindingUtils });
-
-describe("paper migration", () => {
-  it("gives a paper saved before text existed an empty text", () => {
-    const base = newStore().getStoreSnapshot("document");
-    const oldPaper = {
-      id: "shape:oldpaper",
-      typeName: "shape",
-      type: "paper",
-      x: 10,
-      y: 20,
-      rotation: 0,
-      index: "a1",
-      parentId: "page:page",
-      isLocked: false,
-      opacity: 1,
-      meta: {},
-      props: { w: 300, h: 380 },
-    };
-    const snapshot = {
-      store: { ...base.store, [oldPaper.id]: oldPaper },
-      schema: {
-        ...base.schema,
-        sequences: { ...base.schema.sequences, "com.tldraw.shape.paper": 0 },
-      },
-    };
-
-    const store = newStore();
-    expect(() => store.loadStoreSnapshot(snapshot as never)).not.toThrow();
-
-    const paper = store.get("shape:oldpaper" as never) as unknown as {
-      props: { w: number; h: number; richText: unknown };
-    };
-    expect(paper.props.w).toBe(300);
-    expect(paper.props.h).toBe(380);
-    expect(paper.props.richText).toEqual(toRichText(""));
-  });
-
-  it("keeps the text of a paper that already has some", () => {
-    const store = newStore();
-    const snapshot = store.getStoreSnapshot("document");
-    expect(() => newStore().loadStoreSnapshot(snapshot)).not.toThrow();
-  });
-});
-```
-
 Create `src/text/textOptions.test.ts`:
 
 ```ts
@@ -1841,11 +1788,58 @@ describe("deeskExtensions", () => {
 });
 ```
 
+Create `src/text/typeToEdit.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { isTypeToEditKey, type KeyInfo } from "./typeToEdit";
+
+const key = (k: string, extra: Partial<KeyInfo> = {}): KeyInfo => ({
+  key: k,
+  metaKey: false,
+  ctrlKey: false,
+  altKey: false,
+  isComposing: false,
+  ...extra,
+});
+
+describe("isTypeToEditKey", () => {
+  it("starts writing on letters, digits and punctuation", () => {
+    for (const k of ["a", "Z", "7", "#", "-", "?", "æ", "Ø", "å", "€"]) {
+      expect(isTypeToEditKey(key(k))).toBe(true);
+    }
+  });
+
+  it("starts writing on a character made with Option/Alt, such as @ on some keyboards", () => {
+    expect(isTypeToEditKey(key("@", { altKey: true }))).toBe(true);
+  });
+
+  it("does not start writing for shortcuts with Cmd or Ctrl", () => {
+    expect(isTypeToEditKey(key("c", { metaKey: true }))).toBe(false);
+    expect(isTypeToEditKey(key("z", { ctrlKey: true }))).toBe(false);
+  });
+
+  it("does not start writing for keys that are not characters", () => {
+    for (const k of ["Enter", "Escape", "Backspace", "Delete", "Tab", "ArrowUp", "Shift", "Dead"]) {
+      expect(isTypeToEditKey(key(k))).toBe(false);
+    }
+  });
+
+  it("leaves Space alone, because it pans the canvas", () => {
+    expect(isTypeToEditKey(key(" "))).toBe(false);
+  });
+
+  it("does not interfere with text composition", () => {
+    expect(isTypeToEditKey(key("a", { isComposing: true }))).toBe(false);
+  });
+});
+```
+
 - [ ] **Step 2: Run to see them fail**
 
-Run: `npm test`. Expected: FAIL (`./textOptions` and the migrations cannot be resolved; the guard test fails because `richText` is not a prop yet).
+Run: `npm test`. Expected: FAIL (`./textOptions` and `./typeToEdit` cannot be resolved; the guard test fails because `richText` is not a prop yet).
 
-- [ ] **Step 3: Types, constants and the migration**
+- [ ] **Step 3: Types and constants**
 
 In `src/shapes/paper/paperTypes.ts`, change the props map to include the text, import the type, and add the constants:
 
@@ -1868,29 +1862,6 @@ export const PAPER_LINE_HEIGHT = 1.5;
 export const PAPER_PADDING_PX = 16;
 export const PAPER_TEXT_COLOR = "#2b2b2b";
 export const PAPER_FONT_FAMILY = "system-ui, sans-serif";
-```
-
-Create `src/shapes/paper/paperMigrations.ts`. Check the installed docs (`createShapePropsMigrationIds`, around the "Static properties" section) for the exact sequence format and adjust if it differs:
-
-```ts
-import { createShapePropsMigrationIds, createShapePropsMigrationSequence, toRichText } from "tldraw";
-import { PAPER_TYPE } from "./paperTypes";
-
-const versions = createShapePropsMigrationIds(PAPER_TYPE, {
-  AddRichText: 1,
-});
-
-// Papers saved before Task 8 have only a width and a height. Give them an empty text.
-export const paperMigrations = createShapePropsMigrationSequence({
-  sequence: [
-    {
-      id: versions.AddRichText,
-      up(props: Record<string, unknown>) {
-        props.richText = toRichText("");
-      },
-    },
-  ],
-});
 ```
 
 - [ ] **Step 4: Text options**
@@ -1924,7 +1895,6 @@ import {
   useValue,
   type TLResizeInfo,
 } from "tldraw";
-import { paperMigrations } from "./paperMigrations";
 import {
   PAPER_DEFAULT_HEIGHT,
   PAPER_DEFAULT_WIDTH,
@@ -1942,7 +1912,6 @@ import {
 export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
   static override type = PAPER_TYPE;
   static override props = { w: T.number, h: T.number, richText: richTextValidator };
-  static override migrations = paperMigrations;
 
   getDefaultProps(): PaperShape["props"] {
     return { w: PAPER_DEFAULT_WIDTH, h: PAPER_DEFAULT_HEIGHT, richText: toRichText("") };
@@ -2025,9 +1994,83 @@ options={{
 
 If the option names differ in the installed types, follow the types (docs: "TipTap integration" in `node_modules/tldraw/DOCS.md`) and note the change in Findings.
 
+- [ ] **Step 6a: Start writing when a paper is selected and a key is pressed**
+
+Create `src/text/typeToEdit.ts`:
+
+```ts
+export interface KeyInfo {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  isComposing: boolean;
+}
+
+// A key press that should start writing on the selected paper: one printable character,
+// without Cmd or Ctrl, and not Space (Space is tldraw's pan key). Option/Alt is allowed
+// because some keyboards make characters such as @ with it.
+export function isTypeToEditKey(e: KeyInfo): boolean {
+  if (e.metaKey || e.ctrlKey || e.isComposing) return false;
+  if (e.key === " ") return false;
+  return [...e.key].length === 1;
+}
+```
+
+Run `npm test`; the `typeToEdit` tests should now pass.
+
+Create `src/text/TypeToEdit.tsx`. The keydown handler is registered on the window in the capture phase, so it runs before tldraw's single-letter shortcuts, and it only acts when the select tool is idle and exactly one paper is selected. Check the installed types for `Editor#isIn`, `getOnlySelectedShape`, `getRichTextEditor` and `startEditingShapeWithRichText`, and adjust if they differ:
+
+```tsx
+import { useEffect } from "react";
+import { startEditingShapeWithRichText, useEditor, type Editor } from "tldraw";
+import { PAPER_TYPE } from "../shapes/paper/paperTypes";
+import { isTypeToEditKey } from "./typeToEdit";
+
+function isTextFieldFocused(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+}
+
+// The editor appears on the next frames after editing starts, so wait for it before typing.
+function insertWhenReady(editor: Editor, text: string, framesLeft = 30) {
+  const textEditor = editor.getRichTextEditor();
+  if (textEditor) {
+    textEditor.chain().focus().insertContent(text).run();
+    return;
+  }
+  if (framesLeft > 0) requestAnimationFrame(() => insertWhenReady(editor, text, framesLeft - 1));
+}
+
+export function TypeToEdit(): null {
+  const editor = useEditor();
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isTypeToEditKey(e)) return;
+      if (isTextFieldFocused(e.target)) return;
+      if (!editor.isIn("select.idle")) return;
+      const shape = editor.getOnlySelectedShape();
+      if (!shape || shape.type !== PAPER_TYPE) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      startEditingShapeWithRichText(editor, shape);
+      insertWhenReady(editor, e.key);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [editor]);
+
+  return null;
+}
+```
+
+In `src/Desk.tsx`, import `TypeToEdit` and render it next to `<ZoomSpring />` inside `<Tldraw>`.
+
 - [ ] **Step 7: Run everything, then commit**
 
-Run: `npm run build && npm test`. Expected: both pass. If the migration test cannot load the hand-built snapshot, adapt it as noted in Step 1 until it fails for the right reason, then passes with the migration in place. Commit:
+Run: `npm run build && npm test`. Expected: both pass. Commit:
 
 ```bash
 git add -A
@@ -2037,8 +2080,10 @@ git commit -m "feat: write on papers with markdown headers and bold"
 - [ ] **Step 8: User verifies by hand (agent starts `npm run tauri dev`)**
 
 Give the user this list and wait for answers:
-1. **Your desk still loads.** Your two existing papers are there, empty, at their old sizes and places, and your earlier drawings are still there. (This is the migration check.)
-2. **Start writing.** Double-click a paper, or select it and press Enter. A text cursor appears. Type a sentence. A small formatting bar may appear; ignore it.
+1. **Your desk still loads**, with your earlier drawings.
+2. **Start writing.** Create a paper, then try all three ways: double-click it; select it and press Enter; or just select it with one click and **start typing**. In every case a text cursor appears, and with typing, the very first letter is kept (it must not be lost). A small formatting bar may appear; ignore it.
+2b. **Typing details.** Typing `æ`, `ø` or `å` as the first key on a selected paper works. Typing `#` as the first key and then a space makes a header. Pressing Space, Backspace or Delete on a selected paper does **not** start writing (Backspace or Delete delete the paper). With two papers selected, typing does nothing. Arrow keys still nudge a selected paper.
+2c. **The accepted trade-off.** With a paper selected, pressing `p`, `d` or `r` types the letter and does not switch tools. Press Escape (or click the desk) to deselect, and then `p` is the Paper tool again. Cmd shortcuts and the toolbar always work.
 3. **Header.** On a new line type `# Title` and a space. It becomes a large header, without you leaving the keyboard.
 4. **Bold.** Select some words and press Cmd+B. They turn bold. Cmd+B again turns it off.
 5. **Typed characters stay as typed.** Type a straight quote `"` and two dashes `--`. They stay exactly as typed.
@@ -2047,7 +2092,7 @@ Give the user this list and wait for answers:
 8. **Saving.** Write on two papers, close with the red button, reopen: the text, the header and the bold are all there.
 9. **Undo and redo** (Cmd+Z, Cmd+Shift+Z) while writing and after.
 10. **Copy and paste a paper:** the copy carries the text.
-11. **Typing keys don't trigger shortcuts.** While writing, typing `p`, `d`, `r` and other letters writes letters and does not switch tools.
+11. **Typing keys don't trigger shortcuts** while you are writing: letters are letters.
 12. **A long text** (paste a few paragraphs): it wraps, and anything below the bottom edge is clipped, not spilling out.
 
 - [ ] **Step 9: Commit and ask for confirmation**
