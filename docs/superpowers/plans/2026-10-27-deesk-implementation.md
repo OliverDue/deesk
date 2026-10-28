@@ -1747,7 +1747,7 @@ Fix anything the hand test found (with a test where the problem can be tested wi
   - `TypeToEditListener.tsx`: `TypeToEditListener(): null`, a component rendered inside `<Tldraw>` that starts editing the selected paper when the user starts typing.
   - `textOptions.ts`: `deeskExtensions` (the TipTap extension list: tldraw's defaults without Typography); Task 9 adds the checklist extensions here.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Update the guard in `src/shapes/paper/paper.test.ts` (the props now include the text, but still never a font size or a scale). Replace the "stores only a width and a height" test with:
 
@@ -1836,11 +1836,11 @@ describe("isTypeToEditKey", () => {
 });
 ```
 
-- [ ] **Step 2: Run to see them fail**
+- [x] **Step 2: Run to see them fail**
 
 Run: `npm test`. Expected: FAIL (`./textOptions` and `./typeToEdit` cannot be resolved; the guard test fails because `richText` is not a prop yet).
 
-- [ ] **Step 3: Types and constants**
+- [x] **Step 3: Types and constants**
 
 In `src/shapes/paper/paperTypes.ts`, change the props map to include the text, import the type, and add the constants:
 
@@ -1865,7 +1865,7 @@ export const PAPER_TEXT_COLOR = "#2b2b2b";
 export const PAPER_FONT_FAMILY = "system-ui, sans-serif";
 ```
 
-- [ ] **Step 4: Text options**
+- [x] **Step 4: Text options**
 
 Create `src/text/textOptions.ts`:
 
@@ -1880,7 +1880,7 @@ export const deeskExtensions = getTipTapDefaultExtensions().filter(
 );
 ```
 
-- [ ] **Step 5: The paper renders and edits its text**
+- [x] **Step 5: The paper renders and edits its text**
 
 Replace `src/shapes/paper/PaperShapeUtil.tsx`. Check the installed types for `RichTextLabel` (props are in `src/lib/shapes/shared/RichTextLabel.tsx` of the tldraw package), `useIsEditing`/`getEditingShapeId` if you need them, and `canEdit`, and adjust if they differ:
 
@@ -1982,7 +1982,7 @@ In `src/index.css`, replace the `.paper` and `.paper-text` rules with these (the
 
 If the label's default styles clash with the sheet (text outside the padding, or cut off), check the rules for `.tl-text-label` and `.tl-rich-text-wrapper` in `node_modules/tldraw/tldraw.css` and fix in `index.css`, noting the fix in Findings.
 
-- [ ] **Step 6: Switch on the text options**
+- [x] **Step 6: Switch on the text options**
 
 In `src/Desk.tsx`, import `deeskExtensions` from `./text/textOptions` and extend the options (merge with the camera options; do not replace them):
 
@@ -1995,7 +1995,7 @@ options={{
 
 If the option names differ in the installed types, follow the types (docs: "TipTap integration" in `node_modules/tldraw/DOCS.md`) and note the change in Findings.
 
-- [ ] **Step 6a: Start writing when a paper is selected and a key is pressed**
+- [x] **Step 6a: Start writing when a paper is selected and a key is pressed**
 
 Create `src/text/typeToEdit.ts`:
 
@@ -2069,7 +2069,7 @@ export function TypeToEdit(): null {
 
 In `src/Desk.tsx`, import `TypeToEdit` and render it next to `<ZoomSpring />` inside `<Tldraw>`.
 
-- [ ] **Step 7: Run everything, then commit**
+- [x] **Step 7: Run everything, then commit**
 
 Run: `npm run build && npm test`. Expected: both pass. Commit:
 
@@ -2078,7 +2078,7 @@ git add -A
 git commit -m "feat: write on papers with markdown headers and bold"
 ```
 
-- [ ] **Step 8: User verifies by hand (agent starts `npm run tauri dev`)**
+- [x] **Step 8: User verifies by hand (agent starts `npm run tauri dev`)**
 
 Give the user this list and wait for answers:
 1. **Your desk still loads**, with your earlier drawings.
@@ -2096,7 +2096,7 @@ Give the user this list and wait for answers:
 11. **Typing keys don't trigger shortcuts** while you are writing: letters are letters.
 12. **A long text** (paste a few paragraphs): it wraps, and anything below the bottom edge is clipped, not spilling out.
 
-- [ ] **Step 9: Commit and ask for confirmation**
+- [x] **Step 9: Commit and ask for confirmation**
 
 Fix anything the hand test found (with a test wherever it can be tested without the canvas), commit, tick this task in the plan, record findings, and ask the user for explicit confirmation that Task 8 is done before starting Task 9.
 
@@ -2205,3 +2205,6 @@ Hand re-test: (a) double-click puts the cursor where you clicked, and when you c
 - **Task 6 done (2026-10-28), accepted by the user as "fine for now".** 41 automated tests pass. Known limitation, accepted: the spring starts only after the user stops zooming for `SPRING_IDLE_MS`, so continuous zoom spamming can stay past the soft limit indefinitely (up to the hard stops). Possible later improvement: a cap, so the spring also starts after N seconds past a limit even while the user keeps zooming. Numbers (soft 10%-400%, hard 5%-800%, 350 ms idle, rest factor 0.85, 450 ms animation) are unchanged from the proposal and live in `src/camera/springConfig.ts`.
 - **Task 7 bug found by the first launch (2026-10-28):** `createTLStore({ shapeUtils: [PaperShapeUtil] })` replaced tldraw's built-in shapes instead of adding to them, so the window stayed blank with "Migration 'com.tldraw.binding.arrow/1' depends on missing migration 'com.tldraw.shape.arrow/4'". The `<Tldraw shapeUtils>` prop merges with the defaults; `createTLStore` does not. Fixed: the store uses `storeShapeUtils = [...defaultShapeUtils, ...shapeUtils]` plus `bindingUtils: defaultBindingUtils` (in `src/shapes/registry.tsx`). A regression test (`src/shapes/registry.test.ts`) builds the real store. **Rule for every later custom shape:** add it to `shapeUtils` in the registry; `storeShapeUtils` picks it up.
 - **Task 7 done (2026-10-28), all hand checks passed by the user.** Papers can be created (toolbar button or P; P was confirmed free), moved, rotated, resized (text never scales), stacked, copied, deleted, undone, attached to arrows, and saved/restored with the desk. 49 automated tests pass. Papers show a fixed placeholder line only; editing text is Task 8. Colours are Task 7b.
+- **Task 8 done (2026-10-28), all hand checks passed by the user ("all perfect").** Papers take text through tldraw's bundled TipTap (no separate `@tiptap/*` install): headers with `# `, bold with Cmd+B, bullet lists, saved with the desk. Typography is off. Ways in: double-click (cursor at the click point, or at the end when clicking empty space), Enter (cursor at the end), or typing on a **blank** selected paper (a paper with text ignores plain typing). Pasted copies move to the first free spot down and to the right (no counter). 81 automated tests pass. Details of bugs found along the way are in the Task 8 fixes section above.
+- **Lessons recorded:** (1) a name differing only by capitals clashes on macOS; (2) tldraw hard-codes select-all for Enter and double-click, so a custom shape takes over those paths through `onDoubleClick` and its own key listener; (3) a counter kept in memory is the wrong tool when the right answer depends on what is on the desk, so look at the desk instead.
+- **Known gap, not yet fixed:** if a saved desk fails tldraw's validation on load (for example a paper in an old format), `useDeskStore` throws and the window stays blank; the backup fallback only covers unreadable JSON, not a snapshot that parses but is rejected. Candidate for a small robustness task.
