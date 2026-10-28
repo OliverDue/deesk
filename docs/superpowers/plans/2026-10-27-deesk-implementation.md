@@ -1408,7 +1408,7 @@ Adjust the constants in `src/camera/springConfig.ts` with the user until it feel
   - `PaperTool.ts`: `class PaperTool extends StateNode`, `PAPER_TOOL_ID = "paper"`.
   - `registry.tsx`: `shapeUtils`, `customTools`, `uiOverrides`, `uiComponents`, `assetUrls`, one place that lists everything Deesk adds to tldraw. Later shapes (stickers, pins) are added here.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `src/shapes/paper/paper.test.ts`:
 
@@ -1460,11 +1460,11 @@ describe("PaperShapeUtil", () => {
 
 If constructing the util without an editor throws in the last test, replace that test with one that checks the defaults through an exported constant `PAPER_DEFAULT_PROPS` (add it to `paperTypes.ts` and use it in `getDefaultProps`). If importing tldraw inside Vitest's jsdom environment fails, note the error in Findings and keep the first three tests, relying on Step 9 for the rest.
 
-- [ ] **Step 2: Run to see it fail**
+- [x] **Step 2: Run to see it fail**
 
 Run: `npm test`. Expected: FAIL, because `./paperPlacement`, `./paperTypes` and `./PaperShapeUtil` cannot be resolved.
 
-- [ ] **Step 3: Types, constants and placement**
+- [x] **Step 3: Types, constants and placement**
 
 Create `src/shapes/paper/paperTypes.ts`:
 
@@ -1502,7 +1502,7 @@ export function paperPlacement(centre: { x: number; y: number }): { x: number; y
 }
 ```
 
-- [ ] **Step 4: The shape**
+- [x] **Step 4: The shape**
 
 Create `src/shapes/paper/PaperShapeUtil.tsx`. Check the installed types for `BaseBoxShapeUtil`, `resizeBox` (in particular whether it accepts `minWidth`/`minHeight` options) and `getIndicatorPath`, and adjust if they differ.
 
@@ -1573,7 +1573,7 @@ Add to `src/index.css`:
 
 If `PaperShapeUtil` hard-codes the font size in CSS, keep `PAPER_FONT_SIZE_PX` as the documented value (16) and make sure the two agree.
 
-- [ ] **Step 5: Run the tests, then commit**
+- [x] **Step 5: Run the tests, then commit**
 
 Run: `npm test`. Expected: PASS (all earlier tests plus these). Then:
 
@@ -1582,7 +1582,7 @@ git add src/shapes src/index.css
 git commit -m "feat: paper shape with a fixed-size text area"
 ```
 
-- [ ] **Step 6: The tool that creates a paper**
+- [x] **Step 6: The tool that creates a paper**
 
 Create `src/shapes/paper/PaperTool.ts`:
 
@@ -1607,7 +1607,7 @@ export class PaperTool extends StateNode {
 }
 ```
 
-- [ ] **Step 7: Register everything in one place**
+- [x] **Step 7: Register everything in one place**
 
 Create `public/paper-icon.svg` (a simple page outline; tldraw colours icons itself):
 
@@ -1666,7 +1666,7 @@ export const assetUrls: TLUiAssetUrlOverrides = {
 };
 ```
 
-- [ ] **Step 8: Wire it into the desk and the store**
+- [x] **Step 8: Wire it into the desk and the store**
 
 In `src/persistence/useDeskStore.ts`, import `shapeUtils` from `../shapes/registry` and change `createTLStore()` to `createTLStore({ shapeUtils })`.
 
@@ -1695,7 +1695,7 @@ git add -A
 git commit -m "feat: create papers from a toolbar button or the P key"
 ```
 
-- [ ] **Step 9: User verifies by hand (agent starts `npm run tauri dev`)**
+- [x] **Step 9: User verifies by hand (agent starts `npm run tauri dev`)**
 
 Give the user this list and wait for answers:
 1. **Creating.** A page-icon button appears in the toolbar. Press it (or press **P**) and click on the desk. A paper appears centred on the click, selected, and the tool goes back to select. Does the key clash with another tldraw shortcut?
@@ -1709,7 +1709,7 @@ Give the user this list and wait for answers:
 9. **Delete and copy.** Delete a paper. Copy and paste one (Cmd+C, Cmd+V). The copy appears with the same size.
 10. **Dark mode** is still cream, and the paper still looks like paper.
 
-- [ ] **Step 10: Commit and ask for confirmation**
+- [x] **Step 10: Commit and ask for confirmation**
 
 Fix anything the hand test found (with a test where the problem can be tested without the canvas), commit, tick this task in the plan, record findings, and ask the user for explicit confirmation that Task 7 is done before starting Task 8.
 
@@ -1810,3 +1810,4 @@ Fix anything the hand test found (with a test where the problem can be tested wi
 - **Task 6 user feedback (2026-10-27):** the first version zoomed about the window centre, so content under the mouse drifted away as it eased back. Fixed: the spring now zooms about the mouse pointer (`springAnchor`, with a window-centre fallback). Quick repeated pinching during the ease-back cancels the animation by design (tldraw stops camera animations on user input).
 - **Task 6 done (2026-10-28), accepted by the user as "fine for now".** 41 automated tests pass. Known limitation, accepted: the spring starts only after the user stops zooming for `SPRING_IDLE_MS`, so continuous zoom spamming can stay past the soft limit indefinitely (up to the hard stops). Possible later improvement: a cap, so the spring also starts after N seconds past a limit even while the user keeps zooming. Numbers (soft 10%-400%, hard 5%-800%, 350 ms idle, rest factor 0.85, 450 ms animation) are unchanged from the proposal and live in `src/camera/springConfig.ts`.
 - **Task 7 bug found by the first launch (2026-10-28):** `createTLStore({ shapeUtils: [PaperShapeUtil] })` replaced tldraw's built-in shapes instead of adding to them, so the window stayed blank with "Migration 'com.tldraw.binding.arrow/1' depends on missing migration 'com.tldraw.shape.arrow/4'". The `<Tldraw shapeUtils>` prop merges with the defaults; `createTLStore` does not. Fixed: the store uses `storeShapeUtils = [...defaultShapeUtils, ...shapeUtils]` plus `bindingUtils: defaultBindingUtils` (in `src/shapes/registry.tsx`). A regression test (`src/shapes/registry.test.ts`) builds the real store. **Rule for every later custom shape:** add it to `shapeUtils` in the registry; `storeShapeUtils` picks it up.
+- **Task 7 done (2026-10-28), all hand checks passed by the user.** Papers can be created (toolbar button or P; P was confirmed free), moved, rotated, resized (text never scales), stacked, copied, deleted, undone, attached to arrows, and saved/restored with the desk. 49 automated tests pass. Papers show a fixed placeholder line only; editing text is Task 8. Colours are Task 7b.
