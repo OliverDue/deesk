@@ -2164,7 +2164,7 @@ Hand re-test: (a) double-click puts the cursor where you clicked, and when you c
   - `PaperShapeUtil.onClick(shape)`.
   - `deeskExtensions` now also holds `TaskList` and `TaskItem.configure({ nested: true })`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `src/text/textOptions.test.ts`, inside the existing `describe`:
 
@@ -2352,11 +2352,11 @@ describe("isChecklistShortcut", () => {
 });
 ```
 
-- [ ] **Step 2: Run to see them fail**
+- [x] **Step 2: Run to see them fail**
 
 Run: `npm test`. Expected: FAIL (`./taskItems` and `./checklistAction` cannot be resolved; the schema has no `taskList` yet).
 
-- [ ] **Step 3: The pure logic**
+- [x] **Step 3: The pure logic**
 
 Create `src/text/taskItems.ts`:
 
@@ -2453,7 +2453,7 @@ export function isChecklistShortcut(e: ShortcutKey): boolean {
 
 Run `npm test`. Expected: the `taskItems` and `checklistAction` tests pass (the schema test still fails).
 
-- [ ] **Step 4: Switch on the task list extensions**
+- [x] **Step 4: Switch on the task list extensions**
 
 In `src/text/textOptions.ts`, import `TaskItem` and `TaskList` from `tldraw` and add them to the list:
 
@@ -2472,7 +2472,7 @@ export const deeskExtensions = [
 
 Run `npm test`. Expected: all pass. Commit: `git add src/text && git commit -m "feat: tick-box logic, action choice and task list extensions"`.
 
-- [ ] **Step 5: Tick a box by clicking it, without editing**
+- [x] **Step 5: Tick a box by clicking it, without editing**
 
 In `src/shapes/paper/PaperShapeUtil.tsx`, import `checkboxIndexAt` and `toggleTaskItem` from `../../text/taskItems`, mark the sheet so its checkboxes can be found, and add `onClick`. Check the installed types for `onClick` and `getContainer` and adjust if they differ.
 
@@ -2513,7 +2513,7 @@ Add the method:
   }
 ```
 
-- [ ] **Step 6: Style the tick-boxes**
+- [x] **Step 6: Style the tick-boxes**
 
 tldraw ships no styles for task lists. Add to `src/index.css`:
 
@@ -2576,7 +2576,7 @@ git add -A
 git commit -m "feat: tick-boxes on papers, ticked by clicking even when not editing"
 ```
 
-- [ ] **Step 7: Adding a tick-box: the shared action, the shortcut and the top-right button**
+- [x] **Step 7: Adding a tick-box: the shared action, the shortcut and the top-right button**
 
 Create `src/text/whenRichTextEditorReady.ts`. tldraw's text editor appears a few frames after editing starts, so callers wait for it. Check the type name for the editor in the installed types (`Editor#getRichTextEditor` returns it) and use that type:
 
@@ -2734,7 +2734,7 @@ git add -A
 git commit -m "feat: add a tick-box from a top-right button or Cmd+Shift+9"
 ```
 
-- [ ] **Step 8: User verifies by hand (agent starts `npm run tauri dev`)**
+- [x] **Step 8: User verifies by hand (agent starts `npm run tauri dev`)**
 
 Give the user this list and wait for answers:
 1. **The button.** A tick-box button appears in the top-right corner. Hovering shows what it does.
@@ -2753,7 +2753,7 @@ Give the user this list and wait for answers:
 14. **Copy and paste** a paper that has a checklist: the copy ticks independently of the original.
 15. **A click just outside a box**, on the text, does not tick it.
 
-- [ ] **Step 9: Commit and ask for confirmation**
+- [x] **Step 9: Commit and ask for confirmation**
 
 Fix anything the hand test found (with a test wherever it can be tested without the canvas), commit, tick this task in the plan, record findings, and ask the user for explicit confirmation that Task 9 is done before starting Task 10.
 
@@ -2847,3 +2847,4 @@ Fix anything the hand test found (with a test wherever it can be tested without 
 - **Known gap, not yet fixed:** if a saved desk fails tldraw's validation on load (for example a paper in an old format), `useDeskStore` throws and the window stays blank; the backup fallback only covers unreadable JSON, not a snapshot that parses but is rejected. Candidate for a small robustness task.
 - **Task 9 first hand test (2026-10-28), two findings:** (1) TipTap's *editing* version of a task item (its node view) has **no `data-type=\"taskItem\"` attribute**, only the static HTML has it, so CSS keyed on `li[data-type=\"taskItem\"]` did nothing while editing and the box sat on its own line above the text. The tick-box CSS now matches by structure: `ul[data-type=\"taskList\"] > li` (the task list itself has the attribute in both versions). (2) The same rule keeps the hidden editor under a selected paper from ticking boxes by itself and cancelling the `onClick` toggle (its checkboxes now ignore the pointer while not editing). The `onClick` hit test deliberately still uses `li[data-type=\"taskItem\"] > label`, which only exists in the static version, so each box is counted once.
 - **Task 9 nesting indent (2026-10-28):** a nested tick-box was too far right (user). A nested list already sits inside its parent's text column, so the extra 1.5em padding doubled the indent; it is now 0, which halves the distance and lines the nested box up under the parent's text.
+- **Task 9 done (2026-10-28), all hand checks passed by the user.** Tick-boxes on papers: added with a button in the style panel or Cmd+Shift+9 (found by physical key, so it works on a Danish keyboard), with three cases (editing: toggle the line; paper selected: add an item at the end; nothing selected: new paper with an item; the button is only visible while something is selected). Ticked by clicking, even when the paper is not being edited and without selecting it. Tab nests (half the original indent), Enter adds the next item, ticked items are grey and struck through. Saving verified on disk (3 items, 1 ticked). 102 automated tests pass. Typing `[ ] ` still works (TipTap's rule) but is not advertised: it needs Option+Shift chords on a Danish keyboard. Drag-to-reorder is Task 9b, optional.
