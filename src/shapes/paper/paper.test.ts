@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { toRichText } from "tldraw";
 import { paperPlacement } from "./paperPlacement";
 import {
   PAPER_DEFAULT_HEIGHT,
@@ -32,12 +33,16 @@ describe("paper size rules", () => {
 });
 
 describe("PaperShapeUtil", () => {
-  it("stores only a width and a height, so resizing can never scale text", () => {
-    expect(Object.keys(PaperShapeUtil.props).sort()).toEqual(["h", "w"]);
+  it("stores only a size and the text, so resizing can never scale text", () => {
+    expect(Object.keys(PaperShapeUtil.props).sort()).toEqual(["h", "richText", "w"]);
   });
 
   it("starts at the default size", () => {
     const util = new (PaperShapeUtil as never as new (editor: unknown) => PaperShapeUtil)({});
-    expect(util.getDefaultProps()).toEqual({ w: PAPER_DEFAULT_WIDTH, h: PAPER_DEFAULT_HEIGHT });
+    expect(util.getDefaultProps()).toEqual({
+      w: PAPER_DEFAULT_WIDTH,
+      h: PAPER_DEFAULT_HEIGHT,
+      richText: toRichText(""),
+    });
   });
 });

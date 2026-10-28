@@ -10,6 +10,8 @@ import {
   uiComponents,
   uiOverrides,
 } from "./shapes/registry";
+import { TypeToEdit } from "./text/TypeToEditListener";
+import { deeskExtensions } from "./text/textOptions";
 
 const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY as string | undefined;
 
@@ -27,9 +29,13 @@ export function Desk() {
         assetUrls={assetUrls}
         colorScheme="light"
         licenseKey={licenseKey || undefined}
-        options={{ camera: { zoomSteps: ZOOM_STEPS } }}
+        options={{
+          camera: { zoomSteps: ZOOM_STEPS },
+          text: { tipTapConfig: { extensions: deeskExtensions } },
+        }}
       >
         <ZoomSpring />
+        <TypeToEdit />
       </Tldraw>
     </div>
   );

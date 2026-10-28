@@ -1734,7 +1734,7 @@ Fix anything the hand test found (with a test where the problem can be tested wi
 - **No migration (user decision):** the user deleted the old papers, and `desk.json` and `desk.backup.json` were checked on 2026-10-28 and contain none. A desk that still held a paper saved before this task would fail to load, because that paper has no text.
 
 **Files:**
-- Create: `src/text/typeToEdit.ts`, `src/text/typeToEdit.test.ts`, `src/text/TypeToEdit.tsx`
+- Create: `src/text/typeToEdit.ts`, `src/text/typeToEdit.test.ts`, `src/text/TypeToEditListener.tsx`
 - Create: `src/text/textOptions.ts`, `src/text/textOptions.test.ts`
 - Modify: `src/shapes/paper/paperTypes.ts`, `src/shapes/paper/PaperShapeUtil.tsx`, `src/shapes/paper/paper.test.ts`, `src/Desk.tsx`, `src/index.css`
 
@@ -1743,7 +1743,7 @@ Fix anything the hand test found (with a test where the problem can be tested wi
 - Produces:
   - `paperTypes.ts`: paper props become `{ w: number; h: number; richText: TLRichText }`; new constants `PAPER_LINE_HEIGHT` (1.5), `PAPER_PADDING_PX` (16), `PAPER_TEXT_COLOR` (`#2b2b2b`), `PAPER_FONT_FAMILY` (`system-ui, sans-serif`).
   - `typeToEdit.ts`: `isTypeToEditKey(e: KeyInfo): boolean` where `KeyInfo = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; isComposing: boolean }`.
-  - `TypeToEdit.tsx`: `TypeToEdit(): null`, a component rendered inside `<Tldraw>` that starts editing the selected paper when the user starts typing.
+  - `TypeToEditListener.tsx`: `TypeToEdit(): null`, a component rendered inside `<Tldraw>` that starts editing the selected paper when the user starts typing.
   - `textOptions.ts`: `deeskExtensions` (the TipTap extension list: tldraw's defaults without Typography); Task 9 adds the checklist extensions here.
 
 - [ ] **Step 1: Write the failing tests**
@@ -2019,7 +2019,7 @@ export function isTypeToEditKey(e: KeyInfo): boolean {
 
 Run `npm test`; the `typeToEdit` tests should now pass.
 
-Create `src/text/TypeToEdit.tsx`. The keydown handler is registered on the window in the capture phase, so it runs before tldraw's single-letter shortcuts, and it only acts when the select tool is idle and exactly one paper is selected. Check the installed types for `Editor#isIn`, `getOnlySelectedShape`, `getRichTextEditor` and `startEditingShapeWithRichText`, and adjust if they differ:
+Create `src/text/TypeToEditListener.tsx`. The keydown handler is registered on the window in the capture phase, so it runs before tldraw's single-letter shortcuts, and it only acts when the select tool is idle and exactly one paper is selected. Check the installed types for `Editor#isIn`, `getOnlySelectedShape`, `getRichTextEditor` and `startEditingShapeWithRichText`, and adjust if they differ:
 
 ```tsx
 import { useEffect } from "react";
