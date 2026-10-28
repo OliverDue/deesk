@@ -42,6 +42,7 @@ import {
 } from "tldraw";
 import { ChecklistButton } from "../text/ChecklistControls";
 import { DeeskArrowBindingUtil } from "./deeskArrowBinding";
+import { GlueButton } from "./paper/GlueButton";
 import { PAPER_TOOL_ID, PaperTool } from "./paper/PaperTool";
 import { PaperShapeUtil } from "./paper/PaperShapeUtil";
 import { StickerColorStyle } from "./sticker/stickerTypes";
@@ -60,15 +61,20 @@ export const customTools = [PaperTool, StickerTool];
 // Replaces tldraw's own arrow binding (same type), both in the editor and in the store.
 export const bindingUtils = [DeeskArrowBindingUtil];
 
-// The tick-box is for papers; it has no place in the sticker's colour menu.
-function ChecklistButtonUnlessSticker() {
+// The tick-box and glue buttons are for papers; they have no place in the sticker colour menu.
+function PaperButtonsUnlessSticker() {
   const editor = useEditor();
   const stickerStyles = useValue(
     "hasStickerStyle",
     () => editor.getSharedStyles().get(StickerColorStyle) !== undefined,
     [editor],
   );
-  return stickerStyles ? null : <ChecklistButton />;
+  return stickerStyles ? null : (
+    <div style={{ display: "flex" }}>
+      <ChecklistButton />
+      <GlueButton />
+    </div>
+  );
 }
 
 export const uiOverrides: TLUiOverrides = {
@@ -99,7 +105,7 @@ export const uiComponents: TLComponents = {
       <DefaultStylePanelContent />
       <StylePanelSection>
         <StickerColorPicker />
-        <ChecklistButtonUnlessSticker />
+        <PaperButtonsUnlessSticker />
       </StylePanelSection>
     </DefaultStylePanel>
   ),
@@ -148,5 +154,6 @@ export const uiComponents: TLComponents = {
 export const assetUrls: TLUiAssetUrlOverrides = {
   icons: { "paper-icon": "/paper-icon.svg", "checklist-icon": "/checklist-icon.svg",
     "sticker-icon": "/sticker-icon.svg",
+    "glue-icon": "/glue-icon.svg",
   },
 };

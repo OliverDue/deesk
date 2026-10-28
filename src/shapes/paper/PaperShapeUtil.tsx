@@ -13,6 +13,7 @@ import {
   type TLResizeInfo,
   type TLShape,
 } from "tldraw";
+import { guardGlued, isGlued, withoutGlue } from "../../rules/glue";
 import { placeCaretAtPointer } from "../../text/placeCaret";
 import { checkboxIndexAt, toggleTaskItem } from "../../text/taskItems";
 import { paperAccepts, paperClipRect, paperClips } from "./paperContainer";
@@ -41,6 +42,24 @@ export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
 
   override canEdit() {
     return true;
+  }
+
+  // Glue: where a glued paper is and how big it is cannot change, from any source.
+  override onBeforeUpdate(prev: PaperShape, next: PaperShape) {
+    return guardGlued(prev, next);
+  }
+
+  // A copy (paste, duplicate) of a glued paper starts unglued.
+  override onBeforeCreate(next: PaperShape) {
+    return withoutGlue(next);
+  }
+
+  override canResize(shape: PaperShape) {
+    return !isGlued(shape);
+  }
+
+  override hideRotateHandle(shape: PaperShape) {
+    return isGlued(shape);
   }
 
   // tldraw's own double-click handling selects all the text when editing starts. Start
@@ -179,6 +198,7 @@ export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
             isSelected={isSelected}
           />
         </div>
+        {isGlued(shape) && <div className="paper-tape" />}
       </HTMLContainer>
     );
   }
