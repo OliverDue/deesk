@@ -60,36 +60,37 @@ function installCopyWithConnectors(editor: Editor): () => void {
 
 // 3. An arrow whose last anchor is deleted is deleted too.
 //
-// tldraw runs every "before delete" callback first, then removes everything at once, so
-// "was this the last anchor?" cannot be answered inside a delete callback. Two phases instead:
-// note which arrows were anchored to what is being deleted, and once the whole operation has
-// finished, delete those that have no anchor left. Arrows that were never anchored, and arrows
-// whose end the user drags off a shape (no shape is deleted), are not touched.
+// By the time tldraw's delete callbacks run, it has already removed the arrow's connections to
+// the shape being deleted, so a callback can no longer tell which arrows were anchored to it.
+// So look before asking tldraw to delete: note the arrows anchored to the shapes (and their
+// children), let tldraw delete, then delete the noted arrows that have no anchor left. Arrows
+// that were never anchored, and arrows whose end the user drags off a shape (no shape is
+// deleted), are not touched.
 function installOrphanedArrowCleanup(editor: Editor): () => void {
-  const pending = new Set<TLShapeId>();
+  const original = editor.deleteShapes;
+  // deleteShapes has two signatures (ids or shapes); always call it with ids.
+  const deleteIds = (ids: TLShapeId[]) => (original as (ids: TLShapeId[]) => Editor).call(editor, ids);
+  editor.deleteShapes = function (shapes) {
+    const ids = shapes.map((s: TLShape | TLShapeId) => (typeof s === "string" ? s : s.id));
 
-  const stopBefore = editor.sideEffects.registerBeforeDeleteHandler("shape", (shape, source) => {
-    if (source !== "user") return;
-    for (const binding of editor.getBindingsToShape(shape, "arrow")) {
-      pending.add(binding.fromId as TLShapeId);
+    const anchoredArrows = new Set<TLShapeId>();
+    for (const id of editor.getShapeAndDescendantIds(ids)) {
+      for (const binding of editor.getBindingsToShape(id, "arrow")) {
+        anchoredArrows.add(binding.fromId as TLShapeId);
+      }
     }
-  });
 
-  const stopAfter = editor.sideEffects.registerOperationCompleteHandler(() => {
-    if (pending.size === 0) return;
-    const arrowIds = [...pending];
-    pending.clear();
+    deleteIds(ids as TLShapeId[]);
 
-    const checks = arrowIds
+    const checks = [...anchoredArrows]
       .filter((id) => editor.getShape(id))
       .map((id) => ({ arrowId: id, bindingsLeft: editor.getBindingsFromShape(id, "arrow").length }));
     const doomed = arrowsToDelete(checks) as TLShapeId[];
-    if (doomed.length > 0) editor.deleteShapes(doomed);
-  });
-
+    if (doomed.length > 0) deleteIds(doomed);
+    return editor;
+  };
   return () => {
-    stopBefore();
-    stopAfter();
+    editor.deleteShapes = original;
   };
 }
 

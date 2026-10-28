@@ -13,6 +13,7 @@ import {
 import { EditorTweaks } from "./shapes/EditorTweaksInstaller";
 import { PasteOffset } from "./shapes/PasteOffsetHandler";
 import { ChecklistShortcut } from "./text/ChecklistControls";
+import { deeskTheme } from "./text/deeskTheme";
 import { TypeToEditListener } from "./text/TypeToEditListener";
 import { deeskExtensions } from "./text/textOptions";
 
@@ -31,6 +32,7 @@ export function Desk() {
         components={uiComponents}
         assetUrls={assetUrls}
         colorScheme="light"
+        themes={{ default: deeskTheme }}
         licenseKey={licenseKey || undefined}
         options={{
           camera: { zoomSteps: ZOOM_STEPS },
