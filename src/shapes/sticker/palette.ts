@@ -10,7 +10,7 @@ export const STICKER_COLORS = [
 export type StickerColorKey = (typeof STICKER_COLORS)[number]["key"];
 
 export const STICKER_COLOR_KEYS = STICKER_COLORS.map((c) => c.key) as readonly StickerColorKey[];
-export const STICKER_DEFAULT_COLOR: StickerColorKey = "red";
+export const STICKER_DEFAULT_COLOR: StickerColorKey = "green";
 
 export function stickerColor(key: string) {
   const find = (k: string) => STICKER_COLORS.find((c) => c.key === k);

@@ -14,6 +14,10 @@ describe("sticker palette", () => {
     }
   });
 
+  it("starts on green", () => {
+    expect(STICKER_DEFAULT_COLOR).toBe("green");
+  });
+
   it("looks a colour up by key and falls back to the default for an unknown one", () => {
     expect(stickerColor("blue").key).toBe("blue");
     expect(stickerColor("nope").key).toBe(STICKER_DEFAULT_COLOR);

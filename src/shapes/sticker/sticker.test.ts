@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe("sticker shape", () => {
-  it("defaults to red and keeps a chosen colour", () => {
+  it("defaults to green and keeps a chosen colour", () => {
     const editor = makeEditor();
     const a = createShapeId("a");
     const b = createShapeId("b");
@@ -35,7 +35,7 @@ describe("sticker shape", () => {
       { id: a, type: STICKER_TYPE, x: 0, y: 0 },
       { id: b, type: STICKER_TYPE, x: 50, y: 0, props: { color: "blue" } },
     ]);
-    expect((editor.getShape(a) as any).props.color).toBe("red");
+    expect((editor.getShape(a) as any).props.color).toBe("green");
     expect((editor.getShape(b) as any).props.color).toBe("blue");
   });
 

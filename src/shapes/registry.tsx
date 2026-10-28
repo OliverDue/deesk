@@ -31,7 +31,9 @@ import {
   TriangleToolbarItem,
   XBoxToolbarItem,
   TldrawUiMenuItem,
+  useEditor,
   useIsToolSelected,
+  useValue,
   useTools,
   type TLComponents,
   StylePanelSection,
@@ -42,6 +44,7 @@ import { ChecklistButton } from "../text/ChecklistControls";
 import { DeeskArrowBindingUtil } from "./deeskArrowBinding";
 import { PAPER_TOOL_ID, PaperTool } from "./paper/PaperTool";
 import { PaperShapeUtil } from "./paper/PaperShapeUtil";
+import { StickerColorStyle } from "./sticker/stickerTypes";
 import { StickerColorPicker } from "./sticker/StickerColorPicker";
 import { StickerShapeUtil } from "./sticker/StickerShapeUtil";
 import { STICKER_TOOL_ID, StickerTool } from "./sticker/StickerTool";
@@ -56,6 +59,17 @@ export const customTools = [PaperTool, StickerTool];
 
 // Replaces tldraw's own arrow binding (same type), both in the editor and in the store.
 export const bindingUtils = [DeeskArrowBindingUtil];
+
+// The tick-box is for papers; it has no place in the sticker's colour menu.
+function ChecklistButtonUnlessSticker() {
+  const editor = useEditor();
+  const stickerStyles = useValue(
+    "hasStickerStyle",
+    () => editor.getSharedStyles().get(StickerColorStyle) !== undefined,
+    [editor],
+  );
+  return stickerStyles ? null : <ChecklistButton />;
+}
 
 export const uiOverrides: TLUiOverrides = {
   tools(editor, tools) {
@@ -85,7 +99,7 @@ export const uiComponents: TLComponents = {
       <DefaultStylePanelContent />
       <StylePanelSection>
         <StickerColorPicker />
-        <ChecklistButton />
+        <ChecklistButtonUnlessSticker />
       </StylePanelSection>
     </DefaultStylePanel>
   ),
