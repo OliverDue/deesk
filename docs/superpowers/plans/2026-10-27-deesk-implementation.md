@@ -2119,11 +2119,358 @@ Wiring:
 Hand re-test: (a) double-click puts the cursor where you clicked, and when you click in empty space under the text it goes to the end; Enter puts the cursor at the end; nothing is ever selected; (b) typing on a blank selected paper writes at the start and stays there; (c) typing on a paper with text does nothing; (d) Enter and double-click still edit a paper with text, at the end; (e) copy and paste a paper: the copy appears down and right; pasting again steps further; delete the copies and paste again: it is back at the first step; (f) the other Task 8 hand checks that are still unreported.
 
 
-### Task 9: Checklist body
+### Task 9: Tick-boxes on papers
 
-- **Goal:** checklist papers with nested items, drag-to-reorder and check/uncheck. No progress indicator.
-- **Files:** `src/shapes/paper/ChecklistBody.tsx`, reuse of the TipTap task-list extension, tests for nesting and reorder logic.
-- **Acceptance:** items nest, reorder and tick. Content persists.
+**Goal:** a paper can contain tick-boxes (checklist items). You make one by typing `[ ] ` at the start of a line, and you tick or untick it by clicking the box, **even when you are not editing the paper**. No progress indicator.
+
+**Scope (the user asked for the simple version):** tick-boxes only. Nesting with Tab is included because it costs nothing (tldraw already treats task lists as lists for the Tab key). **Drag-to-reorder is not part of this task** (the original roadmap had it); it is left as an optional Task 9b.
+
+**How (from the installed TipTap and tldraw source):**
+- TipTap's `TaskList` and `TaskItem` are exported by tldraw (no separate `@tiptap/*` install). `TaskItem` has the markdown rule `[ ] ` / `[x] ` (regex `/^\s*(\[([( |x])?\])\s$/`), Enter to split, Tab to nest (with `nested: true`), Shift+Tab to un-nest, and tldraw's `isEditingRichTextList` already counts `taskList` as a list for Tab. TipTap's own shortcut for a task list is Cmd+Shift+9.
+- When the paper is **not** being edited, tldraw shows static HTML: `<li data-type="taskItem" data-checked="true"><label><input type="checkbox"><span></span></label><div>…</div></li>`. tldraw ships no styles for it, so the paper's CSS has to provide them.
+- **Ticking without editing:** tldraw calls a shape's `onClick(shape)` when it is clicked without a drag. If it returns a change, tldraw applies it (with an undo step) and does **not** select the shape; if it returns nothing, the normal select flow continues. The paper's `onClick` finds which checkbox, if any, is under the pointer, and returns the same text with that one item toggled. Finding the box uses the checkbox elements' on-screen rectangles, so it does not depend on tldraw's pointer-events settings. The Nth checkbox in document order is the Nth `taskItem` in the saved text (both are depth-first, top to bottom), which is how the two are matched.
+- Defining `onClick` changes one detail of how tldraw selects the paper: a paper is selected when the mouse button is released, not when it is pressed. Dragging an unselected paper still moves it (tldraw's embeds and bookmarks work this way); the hand test checks this.
+
+**Design decisions (proposed, to be confirmed by the user)**
+- Make a tick-box: type `[ ] ` (or `[x] ` for an already-ticked one) at the start of a line, or press Cmd+Shift+9. Enter adds the next item; Enter on an empty item leaves the list.
+- Ticked items look finished: the text turns grey and is struck through.
+- A click on a box ticks it without selecting the paper. A click anywhere else on the paper selects it as before.
+- The box size and the gap follow the paper's fixed font size, so resizing a paper never scales them.
+
+**Files:**
+- Create: `src/text/taskItems.ts`, `src/text/taskItems.test.ts`
+- Modify: `src/text/textOptions.ts`, `src/text/textOptions.test.ts`, `src/shapes/paper/PaperShapeUtil.tsx`, `src/index.css`
+
+**Interfaces:**
+- Consumes: Task 8's paper and `deeskExtensions`; tldraw's `TaskList`, `TaskItem`, `TLRichText`, `Editor#inputs.getCurrentScreenPoint`, `Editor#getContainer`.
+- Produces:
+  - `taskItems.ts`: `interface Box { left: number; top: number; right: number; bottom: number }`; `toggleTaskItem(richText: TLRichText, index: number): TLRichText` (a new document with the `index`th task item, counted depth-first from 0, ticked or unticked; the same object when there is no such item; never changes its input); `checkboxIndexAt(point: { x: number; y: number }, boxes: Box[], slop?: number): number` (the index of the first box containing the point, widened by `slop` pixels, or -1).
+  - `PaperShapeUtil.onClick(shape)`.
+  - `deeskExtensions` now also holds `TaskList` and `TaskItem.configure({ nested: true })`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `src/text/textOptions.test.ts`, inside the existing `describe`:
+
+```ts
+  it("lets a line be a tick-box item, and nests them", () => {
+    expect(schema.nodes.taskList).toBeDefined();
+    expect(schema.nodes.taskItem).toBeDefined();
+  });
+```
+
+Create `src/text/taskItems.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { checkboxIndexAt, toggleTaskItem, type Box } from "./taskItems";
+
+const text = (t: string) => ({ type: "text", text: t });
+const paragraph = (t: string) => ({ type: "paragraph", content: [text(t)] });
+const item = (t: string, checked?: boolean, ...nested: unknown[]) => ({
+  type: "taskItem",
+  attrs: checked === undefined ? {} : { checked },
+  content: [paragraph(t), ...nested],
+});
+const list = (...items: unknown[]) => ({ type: "taskList", content: items });
+const doc = (...content: unknown[]) => ({ type: "doc", content });
+
+const checkedFlags = (richText: unknown): boolean[] => {
+  const flags: boolean[] = [];
+  const walk = (node: any) => {
+    if (node?.type === "taskItem") flags.push(!!node.attrs?.checked);
+    (node?.content ?? []).forEach(walk);
+  };
+  walk(richText);
+  return flags;
+};
+
+describe("toggleTaskItem", () => {
+  it("ticks the chosen item and leaves the others", () => {
+    const rt = doc(list(item("a", false), item("b", false), item("c", false)));
+    expect(checkedFlags(toggleTaskItem(rt, 1))).toEqual([false, true, false]);
+  });
+
+  it("unticks a ticked item", () => {
+    const rt = doc(list(item("a", true), item("b", true)));
+    expect(checkedFlags(toggleTaskItem(rt, 0))).toEqual([false, true]);
+  });
+
+  it("treats an item with no checked value as unticked", () => {
+    const rt = doc(list(item("a")));
+    expect(checkedFlags(toggleTaskItem(rt, 0))).toEqual([true]);
+  });
+
+  it("counts nested items depth-first, top to bottom", () => {
+    // a, b, b1, b2, c  -> indexes 0, 1, 2, 3, 4
+    const rt = doc(
+      list(item("a", false), item("b", false, list(item("b1", false), item("b2", false))), item("c", false)),
+    );
+    expect(checkedFlags(toggleTaskItem(rt, 2))).toEqual([false, false, true, false, false]);
+    expect(checkedFlags(toggleTaskItem(rt, 3))).toEqual([false, false, false, true, false]);
+    expect(checkedFlags(toggleTaskItem(rt, 4))).toEqual([false, false, false, false, true]);
+  });
+
+  it("counts only task items, not other content before them", () => {
+    const rt = doc(
+      { type: "heading", attrs: { level: 1 }, content: [text("Title")] },
+      paragraph("intro"),
+      { type: "bulletList", content: [{ type: "listItem", content: [paragraph("x")] }] },
+      list(item("a", false), item("b", false)),
+    );
+    expect(checkedFlags(toggleTaskItem(rt, 1))).toEqual([false, true]);
+  });
+
+  it("keeps the text of the toggled item", () => {
+    const rt = doc(list(item("keep me", false)));
+    const toggled = toggleTaskItem(rt, 0) as any;
+    expect(toggled.content[0].content[0].content[0].content[0].text).toBe("keep me");
+  });
+
+  it("returns the same document when there is no such item", () => {
+    const rt = doc(list(item("a", false)));
+    expect(toggleTaskItem(rt, 5)).toBe(rt);
+    expect(toggleTaskItem(rt, -1)).toBe(rt);
+    expect(toggleTaskItem(doc(paragraph("no boxes")), 0)).toEqual(doc(paragraph("no boxes")));
+  });
+
+  it("never changes the document it was given", () => {
+    const rt = doc(list(item("a", false)));
+    const before = JSON.stringify(rt);
+    toggleTaskItem(rt, 0);
+    expect(JSON.stringify(rt)).toBe(before);
+  });
+});
+
+describe("checkboxIndexAt", () => {
+  const boxes: Box[] = [
+    { left: 10, top: 10, right: 30, bottom: 30 },
+    { left: 10, top: 50, right: 30, bottom: 70 },
+  ];
+
+  it("finds the box under the pointer", () => {
+    expect(checkboxIndexAt({ x: 20, y: 20 }, boxes)).toBe(0);
+    expect(checkboxIndexAt({ x: 20, y: 60 }, boxes)).toBe(1);
+  });
+
+  it("returns -1 when the pointer is not over a box", () => {
+    expect(checkboxIndexAt({ x: 100, y: 20 }, boxes)).toBe(-1);
+    expect(checkboxIndexAt({ x: 20, y: 40 }, boxes)).toBe(-1);
+    expect(checkboxIndexAt({ x: 20, y: 20 }, [])).toBe(-1);
+  });
+
+  it("includes the edges, and allows a little slop around the box", () => {
+    expect(checkboxIndexAt({ x: 30, y: 30 }, boxes)).toBe(0);
+    expect(checkboxIndexAt({ x: 33, y: 20 }, boxes, 4)).toBe(0);
+    expect(checkboxIndexAt({ x: 36, y: 20 }, boxes, 4)).toBe(-1);
+  });
+});
+```
+
+- [ ] **Step 2: Run to see them fail**
+
+Run: `npm test`. Expected: FAIL (`./taskItems` cannot be resolved; the schema has no `taskList` yet).
+
+- [ ] **Step 3: The pure logic**
+
+Create `src/text/taskItems.ts`:
+
+```ts
+import type { TLRichText } from "tldraw";
+
+export interface Box {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+type Node = { type?: string; attrs?: Record<string, unknown>; content?: Node[] };
+
+// A copy of the document with the `index`th task item (counted depth-first from 0, which
+// is also the order the checkboxes appear on screen) ticked or unticked. The same object
+// is returned when there is no such item. The input is never changed.
+export function toggleTaskItem(richText: TLRichText, index: number): TLRichText {
+  let count = 0;
+  let found = false;
+
+  const visit = (node: Node): Node => {
+    let next = node;
+    if (node.type === "taskItem") {
+      if (count === index) {
+        found = true;
+        next = { ...node, attrs: { ...node.attrs, checked: !node.attrs?.checked } };
+      }
+      count += 1;
+    }
+    if (!Array.isArray(node.content)) return next;
+    return { ...next, content: node.content.map(visit) };
+  };
+
+  const result = visit(richText as Node) as unknown as TLRichText;
+  return found ? result : richText;
+}
+
+// The index of the first box containing the point (widened by `slop` pixels), or -1.
+export function checkboxIndexAt(point: { x: number; y: number }, boxes: Box[], slop = 0): number {
+  return boxes.findIndex(
+    (b) =>
+      point.x >= b.left - slop &&
+      point.x <= b.right + slop &&
+      point.y >= b.top - slop &&
+      point.y <= b.bottom + slop,
+  );
+}
+```
+
+Run `npm test`. Expected: the `taskItems` tests pass (the schema test still fails).
+
+- [ ] **Step 4: Switch on the task list extensions**
+
+In `src/text/textOptions.ts`, import `TaskItem` and `TaskList` from `tldraw` and add them to the list:
+
+```ts
+import { TaskItem, TaskList, getTipTapDefaultExtensions } from "tldraw";
+
+// tldraw's TipTap defaults (headers with the "# " markdown rule, bold with Cmd+B, italic,
+// lists, links), without Typography so characters stay exactly as typed, plus tick-boxes:
+// "[ ] " at the start of a line makes one, Tab nests it.
+export const deeskExtensions = [
+  ...getTipTapDefaultExtensions().filter((e) => e.name !== "typography"),
+  TaskList,
+  TaskItem.configure({ nested: true }),
+];
+```
+
+Run `npm test`. Expected: all pass. Commit: `git add src/text && git commit -m "feat: tick-box logic and task list extensions"`.
+
+- [ ] **Step 5: Tick a box by clicking it, without editing**
+
+In `src/shapes/paper/PaperShapeUtil.tsx`, import `checkboxIndexAt` and `toggleTaskItem` from `../../text/taskItems`, mark the sheet so its checkboxes can be found, and add `onClick`. Check the installed types for `onClick` and `getContainer` and adjust if they differ.
+
+On the sheet element, add the attribute: `<div className="paper" data-paper-id={shape.id} style={...}>`.
+
+Add the method:
+
+```tsx
+  // A click on a tick-box ticks it, without editing or selecting the paper. A click anywhere
+  // else returns nothing, so tldraw selects the paper as usual.
+  override onClick(shape: PaperShape) {
+    const sheet = document.querySelector(`[data-paper-id="${shape.id}"]`);
+    if (!sheet) return;
+
+    const boxes = [...sheet.querySelectorAll<HTMLElement>('li[data-type="taskItem"] > label')].map(
+      (el) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      },
+    );
+
+    // tldraw's pointer position is relative to the editor's container; the boxes are
+    // measured in window coordinates.
+    const container = this.editor.getContainer().getBoundingClientRect();
+    const pointer = this.editor.inputs.getCurrentScreenPoint();
+    const index = checkboxIndexAt(
+      { x: pointer.x + container.left, y: pointer.y + container.top },
+      boxes,
+      3,
+    );
+    if (index < 0) return;
+
+    return {
+      id: shape.id,
+      type: PAPER_TYPE,
+      props: { richText: toggleTaskItem(shape.props.richText, index) },
+    } as const;
+  }
+```
+
+- [ ] **Step 6: Style the tick-boxes**
+
+tldraw ships no styles for task lists. Add to `src/index.css`:
+
+```css
+/* Tick-boxes inside a paper. Sizes use em, so they follow the paper's fixed font size. */
+.paper ul[data-type="taskList"] {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.paper ul[data-type="taskList"] ul[data-type="taskList"] {
+  padding-left: 1.5em;
+}
+
+.paper li[data-type="taskItem"] {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+
+.paper li[data-type="taskItem"] > label {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 1.5em; /* one line of text, so the box lines up with the first line */
+  user-select: none;
+}
+
+.paper li[data-type="taskItem"] > label input {
+  width: 1.05em;
+  height: 1.05em;
+  margin: 0;
+  cursor: pointer;
+}
+
+.paper li[data-type="taskItem"] > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.paper li[data-type="taskItem"][data-checked="true"] > div {
+  color: #8a8a8a;
+  text-decoration: line-through;
+}
+
+/* When the paper is not being edited the box is only a picture: clicks are handled by the
+   paper's onClick, so the browser must not tick it by itself and get out of step. */
+.paper .tl-rich-text-wrapper[data-isediting="false"] li[data-type="taskItem"] input {
+  pointer-events: none;
+}
+```
+
+If the line-up of the box with the first line of text looks off, adjust the label `height` and note the change in Findings.
+
+Run `npm run build && npm test`. Expected: both pass. Commit:
+
+```bash
+git add -A
+git commit -m "feat: tick-boxes on papers, ticked by clicking even when not editing"
+```
+
+- [ ] **Step 7: User verifies by hand (agent starts `npm run tauri dev`)**
+
+Give the user this list and wait for answers:
+1. **Make a checklist.** Edit a paper, type `[ ] ` at the start of a line and then some text: a tick-box appears. Press Enter for the next item. Press Enter on an empty item to leave the list. Also try `[x] ` (starts ticked) and Cmd+Shift+9.
+2. **Tick while editing** by clicking a box.
+3. **Tick without editing.** Stop editing and deselect the paper. Click a box: it ticks, the text turns grey and struck through, **and the paper does not get selected**. Click again: it unticks.
+4. **Undo and redo** (Cmd+Z, Cmd+Shift+Z) a tick.
+5. **Nesting.** Press Tab on an item to nest it and Shift+Tab to un-nest. Tick a nested item and an outer item: the right ones toggle.
+6. **Mixed content.** Put a header, a paragraph, a bullet list and a checklist in one paper. Tick the second box: exactly that one toggles.
+7. **Saving.** Tick some boxes, close with the red button, reopen: the ticks are still there.
+8. **Resizing and zoom.** Resize the paper: the boxes and text keep their size. Zoom in and out and tick a box at different zoom levels: it always hits the right one.
+9. **Nothing else broke.** Dragging an unselected paper still moves it in one go. A click on the text selects the paper (when you release the button). Shift-click still multi-selects. Double-click still edits, at the click point. Enter on a selected paper still edits.
+10. **Copy and paste** a paper that has a checklist: the copy ticks independently of the original.
+11. **A click just outside a box**, on the text, does not tick it.
+
+- [ ] **Step 8: Commit and ask for confirmation**
+
+Fix anything the hand test found (with a test wherever it can be tested without the canvas), commit, tick this task in the plan, record findings, and ask the user for explicit confirmation that Task 9 is done before starting Task 10.
+
+### Task 9b (optional): Reorder tick-box items
+
+- **Goal:** drag a checklist item up or down, or move it with the keyboard.
+- **Note:** left out of Task 9 at the user's request for a simpler first version. Expand into steps before building, if wanted.
 
 ### Task 10: Figures on papers
 
