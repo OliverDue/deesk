@@ -1,16 +1,14 @@
 import { useEffect } from "react";
 import { defaultHandleExternalTldrawContent, useEditor } from "tldraw";
-import { createPasteCounter, pasteOffset } from "./pasteOffset";
+import { pasteOffset, pasteStep } from "./pasteOffset";
 
 // tldraw pastes a copy exactly on top of the original when the original is on screen,
 // which makes it easy to paste a copy without noticing. Move what was just pasted down
-// and to the right instead, a little further for each further paste of the same copy.
+// and to the right to the first spot where it does not land on an existing shape.
 export function PasteOffset(): null {
   const editor = useEditor();
 
   useEffect(() => {
-    const counter = createPasteCounter();
-
     editor.registerExternalContentHandler("tldraw", async (external) => {
       const before = new Set(editor.getSelectedShapeIds());
       await defaultHandleExternalTldrawContent(editor, external);
@@ -23,7 +21,19 @@ export function PasteOffset(): null {
       const pasted = editor.getSelectedShapes().filter((shape) => !before.has(shape.id));
       if (pasted.length === 0) return;
 
-      const { x, y } = pasteOffset(counter.next(external.content.rootShapeIds.join(",")));
+      const pastedIds = new Set(pasted.map((shape) => shape.id));
+      const existing = editor
+        .getCurrentPageShapes()
+        .filter((shape) => !pastedIds.has(shape.id))
+        .map((shape) => ({ x: shape.x, y: shape.y }));
+
+      const step = pasteStep(
+        pasted.map((shape) => ({ x: shape.x, y: shape.y })),
+        existing,
+      );
+      if (step === 0) return;
+
+      const { x, y } = pasteOffset(step);
       editor.updateShapes(
         pasted.map((shape) => ({ id: shape.id, type: shape.type, x: shape.x + x, y: shape.y + y })),
       );

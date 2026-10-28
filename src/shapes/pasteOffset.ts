@@ -1,25 +1,30 @@
 export const PASTE_OFFSET_PX = 24;
+export const MAX_PASTE_STEPS = 50;
 
-// How far to move the nth paste of the same copy: down and to the right.
-// Never zero, so a pasted copy can never land exactly on top of its original.
-export function pasteOffset(timesPasted: number): { x: number; y: number } {
-  const n = Number.isFinite(timesPasted) && timesPasted >= 1 ? timesPasted : 1;
-  return { x: PASTE_OFFSET_PX * n, y: PASTE_OFFSET_PX * n };
+// Positions closer than this count as the same spot.
+const SAME_SPOT_PX = 1;
+
+export interface Point {
+  x: number;
+  y: number;
 }
 
-// Counts consecutive pastes of the same copy (1, 2, 3, ...) and starts again when a
-// different copy is pasted.
-export function createPasteCounter() {
-  let lastKey: string | null = null;
-  let count = 0;
-  return {
-    next(key: string): number {
-      if (key !== lastKey) {
-        lastKey = key;
-        count = 0;
-      }
-      count += 1;
-      return count;
-    },
-  };
+const sameSpot = (a: Point, b: Point) =>
+  Math.abs(a.x - b.x) <= SAME_SPOT_PX && Math.abs(a.y - b.y) <= SAME_SPOT_PX;
+
+// How many steps, down and to the right, a pasted copy must move so that none of its
+// shapes lands exactly on an existing shape. It looks at where shapes really are, with
+// no count kept in memory, so deleting a copy frees its spot again.
+export function pasteStep(pasted: Point[], existing: Point[]): number {
+  for (let step = 0; step < MAX_PASTE_STEPS; step++) {
+    const d = step * PASTE_OFFSET_PX;
+    const lands = pasted.some((p) => existing.some((e) => sameSpot({ x: p.x + d, y: p.y + d }, e)));
+    if (!lands) return step;
+  }
+  return MAX_PASTE_STEPS;
+}
+
+export function pasteOffset(step: number): Point {
+  const d = Math.max(0, step) * PASTE_OFFSET_PX;
+  return { x: d, y: d };
 }

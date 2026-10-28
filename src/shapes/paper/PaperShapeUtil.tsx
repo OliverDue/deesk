@@ -10,6 +10,7 @@ import {
   useValue,
   type TLResizeInfo,
 } from "tldraw";
+import { placeCaretAtPointer } from "../../text/placeCaret";
 import {
   PAPER_DEFAULT_HEIGHT,
   PAPER_DEFAULT_WIDTH,
@@ -37,10 +38,11 @@ export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
   }
 
   // tldraw's own double-click handling selects all the text when editing starts. Start
-  // editing here instead, so the cursor lands at the end of the text. Returning a change
+  // editing here instead, with the cursor where the user double-clicked. Returning a change
   // tells tldraw the double click was handled, so it skips its own path.
   override onDoubleClick(shape: PaperShape) {
     startEditingShapeWithRichText(this.editor, shape);
+    placeCaretAtPointer(this.editor, shape.id);
     return { id: shape.id, type: PAPER_TYPE } as const;
   }
 
