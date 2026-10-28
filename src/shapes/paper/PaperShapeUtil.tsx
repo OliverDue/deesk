@@ -11,6 +11,7 @@ import {
   type TLResizeInfo,
 } from "tldraw";
 import { placeCaretAtPointer } from "../../text/placeCaret";
+import { checkboxIndexAt, toggleTaskItem } from "../../text/taskItems";
 import {
   PAPER_DEFAULT_HEIGHT,
   PAPER_DEFAULT_WIDTH,
@@ -46,6 +47,37 @@ export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
     return { id: shape.id, type: PAPER_TYPE } as const;
   }
 
+  // A click on a tick-box ticks it, without editing or selecting the paper. A click anywhere
+  // else returns nothing, so tldraw selects the paper as usual.
+  override onClick(shape: PaperShape) {
+    const sheet = document.querySelector(`[data-paper-id="${shape.id}"]`);
+    if (!sheet) return;
+
+    const boxes = [...sheet.querySelectorAll<HTMLElement>('li[data-type="taskItem"] > label')].map(
+      (el) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      },
+    );
+
+    // tldraw's pointer position is relative to the editor's container; the boxes are
+    // measured in window coordinates.
+    const container = this.editor.getContainer().getBoundingClientRect();
+    const pointer = this.editor.inputs.getCurrentScreenPoint();
+    const index = checkboxIndexAt(
+      { x: pointer.x + container.left, y: pointer.y + container.top },
+      boxes,
+      3,
+    );
+    if (index < 0) return;
+
+    return {
+      id: shape.id,
+      type: PAPER_TYPE,
+      props: { richText: toggleTaskItem(shape.props.richText, index) },
+    } as const;
+  }
+
   // Only the frame changes on resize. The text is laid out at a fixed size, so it can
   // reflow or be clipped, but it can never scale.
   override onResize(shape: PaperShape, info: TLResizeInfo<PaperShape>) {
@@ -60,7 +92,11 @@ export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
     );
     return (
       <HTMLContainer>
-        <div className="paper" style={{ width: shape.props.w, height: shape.props.h }}>
+        <div
+          className="paper"
+          data-paper-id={shape.id}
+          style={{ width: shape.props.w, height: shape.props.h }}
+        >
           <RichTextLabel
             shapeId={shape.id}
             type={shape.type}
