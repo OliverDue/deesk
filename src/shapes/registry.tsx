@@ -1,11 +1,14 @@
 import {
   defaultShapeUtils,
+  DefaultStylePanel,
+  DefaultStylePanelContent,
   DefaultToolbar,
   DefaultToolbarContent,
   TldrawUiMenuItem,
   useIsToolSelected,
   useTools,
   type TLComponents,
+  StylePanelSection,
   type TLUiAssetUrlOverrides,
   type TLUiOverrides,
 } from "tldraw";
@@ -35,7 +38,16 @@ export const uiOverrides: TLUiOverrides = {
 };
 
 export const uiComponents: TLComponents = {
-  SharePanel: ChecklistButton,
+  // The tick-box button sits in the style panel (the white panel with the opacity slider),
+  // in its own section under tldraw's own controls.
+  StylePanel: (props) => (
+    <DefaultStylePanel {...props}>
+      <DefaultStylePanelContent />
+      <StylePanelSection>
+        <ChecklistButton />
+      </StylePanelSection>
+    </DefaultStylePanel>
+  ),
   Toolbar: (props) => {
     const tools = useTools();
     const paperSelected = useIsToolSelected(tools[PAPER_TOOL_ID]);

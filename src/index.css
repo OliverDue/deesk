@@ -29,7 +29,9 @@ body,
     0 6px 14px rgba(0, 0, 0, 0.1);
 }
 
-/* Tick-boxes inside a paper. Sizes use em, so they follow the paper's fixed font size. */
+/* Tick-boxes inside a paper. Sizes use em, so they follow the paper's fixed font size.
+   These match by structure (an item directly inside a task list), not by data-type: the
+   editor's own version of an item has no data-type attribute, only the static one has. */
 .paper ul[data-type="taskList"] {
   list-style: none;
   margin: 0;
@@ -40,13 +42,13 @@ body,
   padding-left: 1.5em;
 }
 
-.paper li[data-type="taskItem"] {
+.paper ul[data-type="taskList"] > li {
   display: flex;
   align-items: flex-start;
   gap: 0.5em;
 }
 
-.paper li[data-type="taskItem"] > label {
+.paper ul[data-type="taskList"] > li > label {
   flex: none;
   display: flex;
   align-items: center;
@@ -54,25 +56,25 @@ body,
   user-select: none;
 }
 
-.paper li[data-type="taskItem"] > label input {
+.paper ul[data-type="taskList"] > li > label input {
   width: 1.05em;
   height: 1.05em;
   margin: 0;
   cursor: pointer;
 }
 
-.paper li[data-type="taskItem"] > div {
+.paper ul[data-type="taskList"] > li > div {
   flex: 1;
   min-width: 0;
 }
 
-.paper li[data-type="taskItem"][data-checked="true"] > div {
+.paper ul[data-type="taskList"] > li[data-checked="true"] > div {
   color: #8a8a8a;
   text-decoration: line-through;
 }
 
 /* When the paper is not being edited the box is only a picture: clicks are handled by the
    paper's onClick, so the browser must not tick it by itself and get out of step. */
-.paper .tl-rich-text-wrapper[data-isediting="false"] li[data-type="taskItem"] input {
+.paper .tl-rich-text-wrapper[data-isediting="false"] ul[data-type="taskList"] input {
   pointer-events: none;
 }
