@@ -1719,11 +1719,340 @@ Fix anything the hand test found (with a test where the problem can be tested wi
 - **Files:** `src/shapes/paper/paperTypes.ts` (add a `color` prop with a migration for existing papers), `PaperShapeUtil.tsx`, a small colour picker UI, tests for the colour list and migration.
 - **Note:** deferred out of Task 7 so the paper itself could be verified first. Expand into steps before building.
 
-### Task 8: Text body with markdown headers and bold
+### Task 8: Text on papers (markdown headers and bold)
 
-- **Goal:** click a paper to edit text with TipTap. `#` at line start makes headers, Cmd+B toggles bold.
-- **Files:** `src/shapes/paper/TextBody.tsx`, `src/editor/tiptap-config.ts`, tests for the config's input rules.
-- **Acceptance:** typing `# Title` becomes a header, Cmd+B bolds the selection, and the content is stored in the shape and persists via Task 5.
+**Goal:** write on a paper. `#` at the start of a line (followed by a space) makes a header, Cmd+B toggles bold. The text is saved with the desk. Resizing the paper never scales the text.
+
+**How (decided from tldraw 5.5.2's source and docs):** tldraw already ships a TipTap-based rich text editor, and its select tool starts editing automatically for any shape that has a `richText` prop and allows editing (double-click, or Enter on a selected shape). So a paper gets a `richText` prop and renders it through tldraw's `RichTextLabel`, which handles display and editing, undo, copy and paste. **No separate `@tiptap/*` package is installed:** tldraw's docs warn that a second copy of TipTap or ProseMirror makes ProseMirror throw. The default extensions already include headings (the `# ` markdown rule), bold (Cmd+B), italic, lists and links. `RichTextLabel` renders nothing for an empty, non-editing paper, so a fresh paper stays blank.
+
+**Design decisions (proposed, to be confirmed by the user)**
+- **Start editing:** double-click a paper, or select it and press Enter. This is tldraw's standard behaviour for text.
+- **Stop editing:** Escape, or click anywhere outside the paper. The paper stays selected after Escape.
+- **Empty paper:** stays blank, with no placeholder text.
+- **Typing rules:** keep tldraw's defaults except **Typography is turned off**, so quotes and dashes stay exactly as typed (no curly quotes, no `--` turning into a dash). Easy to turn back on in one line.
+- **Font:** system font, 16 px, line height 1.5, text colour `#2b2b2b`, padding 16 px. Headers scale with tldraw's own heading styles.
+- **Existing papers need a migration.** Papers saved in Task 7 have only `w` and `h`. Adding `richText` without a migration would make loading the saved desk fail. A migration gives old papers an empty `richText`, and a test loads an old-format paper to prove it.
+
+**Files:**
+- Create: `src/shapes/paper/paperMigrations.ts`, `src/shapes/paper/paperMigrations.test.ts`
+- Create: `src/text/textOptions.ts`, `src/text/textOptions.test.ts`
+- Modify: `src/shapes/paper/paperTypes.ts`, `src/shapes/paper/PaperShapeUtil.tsx`, `src/shapes/paper/paper.test.ts`, `src/Desk.tsx`, `src/index.css`
+
+**Interfaces:**
+- Consumes: Task 7's paper (`PaperShape`, `PaperShapeUtil`, `storeShapeUtils` from `src/shapes/registry.tsx`); tldraw's `RichTextLabel`, `richTextValidator`, `toRichText`, `TLRichText`, `getTipTapDefaultExtensions`, `createShapePropsMigrationIds`, `createShapePropsMigrationSequence`.
+- Produces:
+  - `paperTypes.ts`: paper props become `{ w: number; h: number; richText: TLRichText }`; new constants `PAPER_LINE_HEIGHT` (1.5), `PAPER_PADDING_PX` (16), `PAPER_TEXT_COLOR` (`#2b2b2b`), `PAPER_FONT_FAMILY` (`system-ui, sans-serif`).
+  - `paperMigrations.ts`: `paperMigrations` (a shape props migration sequence whose first step adds an empty `richText`).
+  - `textOptions.ts`: `deeskExtensions` (the TipTap extension list: tldraw's defaults without Typography); Task 9 adds the checklist extensions here.
+
+- [ ] **Step 1: Write the failing tests**
+
+Update the guard in `src/shapes/paper/paper.test.ts` (the props now include the text, but still never a font size or a scale). Replace the "stores only a width and a height" test with:
+
+```ts
+  it("stores only a size and the text, so resizing can never scale text", () => {
+    expect(Object.keys(PaperShapeUtil.props).sort()).toEqual(["h", "richText", "w"]);
+  });
+```
+
+and replace the "starts at the default size" expectation with:
+
+```ts
+    expect(util.getDefaultProps()).toEqual({
+      w: PAPER_DEFAULT_WIDTH,
+      h: PAPER_DEFAULT_HEIGHT,
+      richText: toRichText(""),
+    });
+```
+
+(add `import { toRichText } from "tldraw";` at the top of that file).
+
+Create `src/shapes/paper/paperMigrations.test.ts`. This builds a snapshot in the old format (a paper with only `w` and `h`, and the schema recording the paper at version 0), loads it into the real desk store, and checks it migrates. If tldraw's snapshot or schema shapes differ from what is written here, adapt the construction (print `newStore().getStoreSnapshot("document")` to see the real format) but keep the intent:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { createTLStore, defaultBindingUtils, toRichText } from "tldraw";
+import { storeShapeUtils } from "../registry";
+
+const newStore = () =>
+  createTLStore({ shapeUtils: storeShapeUtils, bindingUtils: defaultBindingUtils });
+
+describe("paper migration", () => {
+  it("gives a paper saved before text existed an empty text", () => {
+    const base = newStore().getStoreSnapshot("document");
+    const oldPaper = {
+      id: "shape:oldpaper",
+      typeName: "shape",
+      type: "paper",
+      x: 10,
+      y: 20,
+      rotation: 0,
+      index: "a1",
+      parentId: "page:page",
+      isLocked: false,
+      opacity: 1,
+      meta: {},
+      props: { w: 300, h: 380 },
+    };
+    const snapshot = {
+      store: { ...base.store, [oldPaper.id]: oldPaper },
+      schema: {
+        ...base.schema,
+        sequences: { ...base.schema.sequences, "com.tldraw.shape.paper": 0 },
+      },
+    };
+
+    const store = newStore();
+    expect(() => store.loadStoreSnapshot(snapshot as never)).not.toThrow();
+
+    const paper = store.get("shape:oldpaper" as never) as unknown as {
+      props: { w: number; h: number; richText: unknown };
+    };
+    expect(paper.props.w).toBe(300);
+    expect(paper.props.h).toBe(380);
+    expect(paper.props.richText).toEqual(toRichText(""));
+  });
+
+  it("keeps the text of a paper that already has some", () => {
+    const store = newStore();
+    const snapshot = store.getStoreSnapshot("document");
+    expect(() => newStore().loadStoreSnapshot(snapshot)).not.toThrow();
+  });
+});
+```
+
+Create `src/text/textOptions.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { deeskExtensions } from "./textOptions";
+
+describe("deeskExtensions", () => {
+  const names = deeskExtensions.map((e) => e.name);
+
+  it("keeps the features we rely on: headers and bold", () => {
+    expect(names).toContain("heading");
+    expect(names).toContain("bold");
+  });
+
+  it("leaves typed characters exactly as typed", () => {
+    expect(names).not.toContain("typography");
+  });
+});
+```
+
+- [ ] **Step 2: Run to see them fail**
+
+Run: `npm test`. Expected: FAIL (`./textOptions` and the migrations cannot be resolved; the guard test fails because `richText` is not a prop yet).
+
+- [ ] **Step 3: Types, constants and the migration**
+
+In `src/shapes/paper/paperTypes.ts`, change the props map to include the text, import the type, and add the constants:
+
+```ts
+import type { TLRichText, TLShape } from "tldraw";
+
+export const PAPER_TYPE = "paper";
+
+declare module "tldraw" {
+  export interface TLGlobalShapePropsMap {
+    [PAPER_TYPE]: { w: number; h: number; richText: TLRichText };
+  }
+}
+```
+
+and add below the existing constants:
+
+```ts
+export const PAPER_LINE_HEIGHT = 1.5;
+export const PAPER_PADDING_PX = 16;
+export const PAPER_TEXT_COLOR = "#2b2b2b";
+export const PAPER_FONT_FAMILY = "system-ui, sans-serif";
+```
+
+Create `src/shapes/paper/paperMigrations.ts`. Check the installed docs (`createShapePropsMigrationIds`, around the "Static properties" section) for the exact sequence format and adjust if it differs:
+
+```ts
+import { createShapePropsMigrationIds, createShapePropsMigrationSequence, toRichText } from "tldraw";
+import { PAPER_TYPE } from "./paperTypes";
+
+const versions = createShapePropsMigrationIds(PAPER_TYPE, {
+  AddRichText: 1,
+});
+
+// Papers saved before Task 8 have only a width and a height. Give them an empty text.
+export const paperMigrations = createShapePropsMigrationSequence({
+  sequence: [
+    {
+      id: versions.AddRichText,
+      up(props: Record<string, unknown>) {
+        props.richText = toRichText("");
+      },
+    },
+  ],
+});
+```
+
+- [ ] **Step 4: Text options**
+
+Create `src/text/textOptions.ts`:
+
+```ts
+import { getTipTapDefaultExtensions } from "tldraw";
+
+// tldraw's TipTap defaults (headers with the "# " markdown rule, bold with Cmd+B,
+// italic, lists, links), without Typography so characters stay exactly as typed.
+// Task 9 adds the checklist extensions here.
+export const deeskExtensions = getTipTapDefaultExtensions().filter(
+  (e) => e.name !== "typography",
+);
+```
+
+- [ ] **Step 5: The paper renders and edits its text**
+
+Replace `src/shapes/paper/PaperShapeUtil.tsx`. Check the installed types for `RichTextLabel` (props are in `src/lib/shapes/shared/RichTextLabel.tsx` of the tldraw package), `useIsEditing`/`getEditingShapeId` if you need them, and `canEdit`, and adjust if they differ:
+
+```tsx
+import {
+  BaseBoxShapeUtil,
+  HTMLContainer,
+  resizeBox,
+  RichTextLabel,
+  richTextValidator,
+  T,
+  toRichText,
+  useValue,
+  type TLResizeInfo,
+} from "tldraw";
+import { paperMigrations } from "./paperMigrations";
+import {
+  PAPER_DEFAULT_HEIGHT,
+  PAPER_DEFAULT_WIDTH,
+  PAPER_FONT_FAMILY,
+  PAPER_FONT_SIZE_PX,
+  PAPER_LINE_HEIGHT,
+  PAPER_MIN_HEIGHT,
+  PAPER_MIN_WIDTH,
+  PAPER_PADDING_PX,
+  PAPER_TEXT_COLOR,
+  PAPER_TYPE,
+  type PaperShape,
+} from "./paperTypes";
+
+export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
+  static override type = PAPER_TYPE;
+  static override props = { w: T.number, h: T.number, richText: richTextValidator };
+  static override migrations = paperMigrations;
+
+  getDefaultProps(): PaperShape["props"] {
+    return { w: PAPER_DEFAULT_WIDTH, h: PAPER_DEFAULT_HEIGHT, richText: toRichText("") };
+  }
+
+  override canEdit() {
+    return true;
+  }
+
+  // Only the frame changes on resize. The text is laid out at a fixed size, so it can
+  // reflow or be clipped, but it can never scale.
+  override onResize(shape: PaperShape, info: TLResizeInfo<PaperShape>) {
+    return resizeBox(shape, info, { minWidth: PAPER_MIN_WIDTH, minHeight: PAPER_MIN_HEIGHT });
+  }
+
+  component(shape: PaperShape) {
+    const isSelected = useValue(
+      "paper selected",
+      () => this.editor.getOnlySelectedShapeId() === shape.id,
+      [this.editor, shape.id],
+    );
+    return (
+      <HTMLContainer>
+        <div className="paper" style={{ width: shape.props.w, height: shape.props.h }}>
+          <RichTextLabel
+            shapeId={shape.id}
+            type={shape.type}
+            richText={shape.props.richText}
+            fontFamily={PAPER_FONT_FAMILY}
+            fontSize={PAPER_FONT_SIZE_PX}
+            lineHeight={PAPER_LINE_HEIGHT}
+            textAlign="start"
+            verticalAlign="start"
+            wrap
+            labelColor={PAPER_TEXT_COLOR}
+            padding={PAPER_PADDING_PX}
+            isSelected={isSelected}
+          />
+        </div>
+      </HTMLContainer>
+    );
+  }
+
+  getIndicatorPath(shape: PaperShape) {
+    const path = new Path2D();
+    path.rect(0, 0, shape.props.w, shape.props.h);
+    return path;
+  }
+}
+```
+
+In `src/index.css`, replace the `.paper` and `.paper-text` rules with these (the text label is positioned inside the sheet, so the sheet needs `position: relative`, and the padding now belongs to the label):
+
+```css
+.paper {
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: #fffdf5;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 2px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.12),
+    0 6px 14px rgba(0, 0, 0, 0.1);
+}
+```
+
+If the label's default styles clash with the sheet (text outside the padding, or cut off), check the rules for `.tl-text-label` and `.tl-rich-text-wrapper` in `node_modules/tldraw/tldraw.css` and fix in `index.css`, noting the fix in Findings.
+
+- [ ] **Step 6: Switch on the text options**
+
+In `src/Desk.tsx`, import `deeskExtensions` from `./text/textOptions` and extend the options (merge with the camera options; do not replace them):
+
+```tsx
+options={{
+  camera: { zoomSteps: ZOOM_STEPS },
+  text: { tipTapConfig: { extensions: deeskExtensions } },
+}}
+```
+
+If the option names differ in the installed types, follow the types (docs: "TipTap integration" in `node_modules/tldraw/DOCS.md`) and note the change in Findings.
+
+- [ ] **Step 7: Run everything, then commit**
+
+Run: `npm run build && npm test`. Expected: both pass. If the migration test cannot load the hand-built snapshot, adapt it as noted in Step 1 until it fails for the right reason, then passes with the migration in place. Commit:
+
+```bash
+git add -A
+git commit -m "feat: write on papers with markdown headers and bold"
+```
+
+- [ ] **Step 8: User verifies by hand (agent starts `npm run tauri dev`)**
+
+Give the user this list and wait for answers:
+1. **Your desk still loads.** Your two existing papers are there, empty, at their old sizes and places, and your earlier drawings are still there. (This is the migration check.)
+2. **Start writing.** Double-click a paper, or select it and press Enter. A text cursor appears. Type a sentence. A small formatting bar may appear; ignore it.
+3. **Header.** On a new line type `# Title` and a space. It becomes a large header, without you leaving the keyboard.
+4. **Bold.** Select some words and press Cmd+B. They turn bold. Cmd+B again turns it off.
+5. **Typed characters stay as typed.** Type a straight quote `"` and two dashes `--`. They stay exactly as typed.
+6. **Stop editing.** Press Escape: editing stops, and the paper stays selected. Click on the desk: it deselects. Click into a paper's text and then outside it: editing stops.
+7. **Text never scales.** Resize the paper from every handle. The text stays the same size, reflowing when narrower and being cut off at the bottom when shorter.
+8. **Saving.** Write on two papers, close with the red button, reopen: the text, the header and the bold are all there.
+9. **Undo and redo** (Cmd+Z, Cmd+Shift+Z) while writing and after.
+10. **Copy and paste a paper:** the copy carries the text.
+11. **Typing keys don't trigger shortcuts.** While writing, typing `p`, `d`, `r` and other letters writes letters and does not switch tools.
+12. **A long text** (paste a few paragraphs): it wraps, and anything below the bottom edge is clipped, not spilling out.
+
+- [ ] **Step 9: Commit and ask for confirmation**
+
+Fix anything the hand test found (with a test wherever it can be tested without the canvas), commit, tick this task in the plan, record findings, and ask the user for explicit confirmation that Task 8 is done before starting Task 9.
 
 ### Task 9: Checklist body
 
