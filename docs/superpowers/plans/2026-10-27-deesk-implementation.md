@@ -1726,7 +1726,7 @@ Fix anything the hand test found (with a test where the problem can be tested wi
 **How (decided from tldraw 5.5.2's source and docs):** tldraw already ships a TipTap-based rich text editor, and its select tool starts editing automatically for any shape that has a `richText` prop and allows editing (double-click, or Enter on a selected shape). So a paper gets a `richText` prop and renders it through tldraw's `RichTextLabel`, which handles display and editing, undo, copy and paste. **No separate `@tiptap/*` package is installed:** tldraw's docs warn that a second copy of TipTap or ProseMirror makes ProseMirror throw. The default extensions already include headings (the `# ` markdown rule), bold (Cmd+B), italic, lists and links. `RichTextLabel` renders nothing for an empty, non-editing paper, so a fresh paper stays blank.
 
 **Design decisions (proposed, to be confirmed by the user)**
-- **Start editing:** double-click a paper, press Enter on a selected paper, **or just start typing while exactly one paper is selected** (user request). The first typed character is kept. Accepted trade-off: while one paper is selected, single-letter tool shortcuts (v, d, r, p, ...) type text instead; Cmd shortcuts and the toolbar are unaffected, and Escape or a click on the desk deselects. Space (tldraw's pan key), Enter, Backspace, Delete and the arrow keys are not treated as typing.
+- **Start editing (revised after the first hand test, 2026-10-28):** double-click a paper or press Enter on a selected paper (both put the cursor at the **end** of the text and do not select it), or, **only when the paper is blank**, just start typing on a selected paper (the first character is kept). A paper that already has text ignores plain typing, so you cannot overwrite or add to it by accident; use Enter or double-click. Because typing is only intercepted on a blank paper, tldraw's single-letter tool shortcuts (v, d, r, p, ...) behave normally on a paper that has text, and type letters only on a blank selected paper. Space, Backspace, Delete and the arrow keys are never treated as typing.
 - **Stop editing:** Escape, or click anywhere outside the paper. The paper stays selected after Escape.
 - **Empty paper:** stays blank, with no placeholder text.
 - **Typing rules:** keep tldraw's defaults except **Typography is turned off**, so quotes and dashes stay exactly as typed (no curly quotes, no `--` turning into a dash). Easy to turn back on in one line.
@@ -2098,6 +2098,25 @@ Give the user this list and wait for answers:
 - [ ] **Step 9: Commit and ask for confirmation**
 
 Fix anything the hand test found (with a test wherever it can be tested without the canvas), commit, tick this task in the plan, record findings, and ask the user for explicit confirmation that Task 8 is done before starting Task 9.
+
+### Task 8 fixes after the first hand test (2026-10-28)
+
+Found by the user: (1) double-click and Enter selected all the text; (2) typing on a selected paper wrote at the start, then the cursor jumped to the end after about two characters; (3) a pasted paper landed exactly on top of the original. Root causes, from tldraw's source: (1) `Idle.ts` calls `startEditingShape(..., true /* select all */)` for Enter and double-click; without it `RichTextArea` focuses the end of the text after 100 ms. (2) `TypeToEditListener` inserted before that 100 ms focus-to-end ran. (3) tldraw's default tldraw-content paste keeps the original position when the original is on screen.
+
+Decisions (user): typing starts writing only on a **blank** paper (a paper with text needs Enter or double-click); paste offsets the copy **24 px down and to the right**, and each further paste of the same copy steps another 24 px.
+
+New pure logic, tested first:
+- `src/text/blankRichText.ts`: `isBlankRichText(richText: unknown): boolean` (true when all text, trimmed, is empty; garbage input counts as blank).
+- `src/text/typeToEdit.ts`: `isEnterToEditKey(e: KeyInfo): boolean` (plain Enter only, no Cmd, Ctrl, Alt or Shift, not composing); `KeyInfo` gains an optional `shiftKey`.
+- `src/shapes/pasteOffset.ts`: `PASTE_OFFSET_PX = 24`, `pasteOffset(timesPasted: number): { x: number; y: number }`, `createPasteCounter(): { next(key: string): number }` (1, 2, 3 for the same key; restarts at 1 when the key changes).
+
+Wiring:
+- `PaperShapeUtil.onDoubleClick(shape)` starts editing without select-all and returns an empty change `{ id, type }`, which tells tldraw the double click was handled so it skips its own select-all path.
+- `TypeToEditListener.tsx`: Enter on a selected paper starts editing without select-all; plain typing starts writing only if `isBlankRichText`; the first character is inserted after `focus('end')`.
+- `src/shapes/PasteOffset.tsx`: registers a `tldraw` external content handler that calls `defaultHandleExternalTldrawContent`, then, when no explicit paste point was given and new shapes were selected by the paste, moves exactly those new shapes by `pasteOffset(counter.next(rootShapeIds.join(",")))`. Shapes that were already selected before the paste are never moved.
+
+Hand re-test: (a) double-click and Enter put the cursor at the end, with nothing selected; (b) typing on a blank selected paper writes at the start and stays there; (c) typing on a paper with text does nothing; (d) Enter and double-click still edit a paper with text, at the end; (e) copy and paste a paper: the copy appears down and right, and a second paste steps further; (f) the other Task 8 hand checks that are still unreported.
+
 
 ### Task 9: Checklist body
 
