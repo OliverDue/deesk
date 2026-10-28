@@ -11,6 +11,7 @@ import {
   uiOverrides,
 } from "./shapes/registry";
 import { PasteOffset } from "./shapes/PasteOffsetHandler";
+import { ChecklistShortcut } from "./text/ChecklistControls";
 import { TypeToEditListener } from "./text/TypeToEditListener";
 import { deeskExtensions } from "./text/textOptions";
 
@@ -37,6 +38,7 @@ export function Desk() {
       >
         <ZoomSpring />
         <TypeToEditListener />
+        <ChecklistShortcut />
         <PasteOffset />
       </Tldraw>
     </div>

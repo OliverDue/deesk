@@ -9,6 +9,7 @@ import {
   type TLUiAssetUrlOverrides,
   type TLUiOverrides,
 } from "tldraw";
+import { ChecklistButton } from "../text/ChecklistControls";
 import { PAPER_TOOL_ID, PaperTool } from "./paper/PaperTool";
 import { PaperShapeUtil } from "./paper/PaperShapeUtil";
 
@@ -34,6 +35,7 @@ export const uiOverrides: TLUiOverrides = {
 };
 
 export const uiComponents: TLComponents = {
+  SharePanel: ChecklistButton,
   Toolbar: (props) => {
     const tools = useTools();
     const paperSelected = useIsToolSelected(tools[PAPER_TOOL_ID]);
@@ -47,5 +49,5 @@ export const uiComponents: TLComponents = {
 };
 
 export const assetUrls: TLUiAssetUrlOverrides = {
-  icons: { "paper-icon": "/paper-icon.svg" },
+  icons: { "paper-icon": "/paper-icon.svg", "checklist-icon": "/checklist-icon.svg" },
 };

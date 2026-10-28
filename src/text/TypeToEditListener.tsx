@@ -1,24 +1,13 @@
 import { useEffect } from "react";
-import { startEditingShapeWithRichText, useEditor, type Editor } from "tldraw";
+import { startEditingShapeWithRichText, useEditor } from "tldraw";
 import { PAPER_TYPE, type PaperShape } from "../shapes/paper/paperTypes";
 import { isBlankRichText } from "./blankRichText";
 import { isEnterToEditKey, isTypeToEditKey } from "./typeToEdit";
+import { whenRichTextEditorReady } from "./whenRichTextEditorReady";
 
 function isTextFieldFocused(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
-}
-
-// The text editor appears a few frames after editing starts, so wait for it before typing.
-// The cursor goes to the end first: tldraw moves it there itself shortly after, and
-// inserting before that would put the first characters at the start.
-function insertWhenReady(editor: Editor, text: string, framesLeft = 30) {
-  const textEditor = editor.getRichTextEditor();
-  if (textEditor) {
-    textEditor.chain().focus("end").insertContent(text).run();
-    return;
-  }
-  if (framesLeft > 0) requestAnimationFrame(() => insertWhenReady(editor, text, framesLeft - 1));
 }
 
 // Keyboard ways into writing on a selected paper:
@@ -48,7 +37,11 @@ export function TypeToEditListener(): null {
       e.preventDefault();
       e.stopPropagation();
       startEditingShapeWithRichText(editor, paper);
-      insertWhenReady(editor, e.key);
+      // The cursor goes to the end first: tldraw moves it there itself shortly after, and
+      // inserting before that would put the first characters at the start.
+      whenRichTextEditorReady(editor, (textEditor) =>
+        textEditor.chain().focus("end").insertContent(e.key).run(),
+      );
     };
     // Capture phase, so this runs before tldraw's single-letter tool shortcuts.
     window.addEventListener("keydown", onKeyDown, true);
