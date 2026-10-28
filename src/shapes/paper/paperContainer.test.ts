@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { paperAccepts, paperClipRect, paperClips } from "./paperContainer";
+import { paperAccepts, paperClipRect, paperClips, paperKeepsInside } from "./paperContainer";
 
 describe("paperAccepts", () => {
   it("accepts the figure types you draw on a paper", () => {
@@ -52,5 +52,23 @@ describe("paperClipRect", () => {
 
   it("follows the size, so resizing the paper moves the clip edge", () => {
     expect(paperClipRect(120, 120)[2]).toEqual({ x: 120, y: 120 });
+  });
+});
+
+describe("paperKeepsInside", () => {
+  it("covers the clipped figures, which the paper may not shrink away from", () => {
+    for (const type of ["geo", "line", "text", "note", "image"]) {
+      expect(paperKeepsInside(type)).toBe(true);
+    }
+  });
+
+  it("covers stickers, although they may overhang", () => {
+    expect(paperKeepsInside("sticker")).toBe(true);
+  });
+
+  it("leaves out arrows and strokes, which may run past the edge freely", () => {
+    for (const type of ["arrow", "draw", "highlight"]) {
+      expect(paperKeepsInside(type)).toBe(false);
+    }
   });
 });

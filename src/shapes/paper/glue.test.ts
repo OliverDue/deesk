@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Box, Editor, createShapeId, createTLStore, toRichText } from "tldraw";
 import { bindingUtils, storeShapeUtils } from "../registry";
+import { toggleGlue } from "./glueAction";
 
 let editors: Editor[] = [];
 
@@ -134,5 +135,78 @@ describe("copies of a glued paper", () => {
     editor.deleteShapes([id]);
     editor.undo();
     expect((editor.getShape(id) as any).meta.glued).toBe(true);
+  });
+});
+
+describe("toggleGlue", () => {
+  const order = (editor: Editor) =>
+    editor.getSortedChildIdsForParent(editor.getCurrentPageId());
+
+  it("glues the papers and sends them to the back", () => {
+    const editor = makeEditor();
+    const a = createShapeId("a");
+    const b = createShapeId("b");
+    const box = createShapeId("box");
+    editor.createShapes([
+      { id: a, type: "paper", x: 0, y: 0 },
+      { id: box, type: "geo", x: 900, y: 0 },
+      { id: b, type: "paper", x: 400, y: 0 },
+    ]);
+    toggleGlue(editor, [editor.getShape(b)!]);
+    expect((editor.getShape(b) as any).meta.glued).toBe(true);
+    expect(order(editor)[0]).toBe(b);
+  });
+
+  it("does not reorder when it unglues", () => {
+    const editor = makeEditor();
+    const a = createShapeId("a");
+    const b = createShapeId("b");
+    editor.createShapes([
+      { id: a, type: "paper", x: 0, y: 0 },
+      { id: b, type: "paper", x: 400, y: 0 },
+    ]);
+    toggleGlue(editor, [editor.getShape(b)!]);
+    const before = order(editor);
+    toggleGlue(editor, [editor.getShape(b)!]);
+    expect((editor.getShape(b) as any).meta.glued).toBeFalsy();
+    expect(order(editor)).toEqual(before);
+  });
+
+  it("keeps a connecting arrow above the paper that was sent back", () => {
+    const editor = makeEditor();
+    const a = createShapeId("a");
+    const b = createShapeId("b");
+    const arrow = createShapeId("arrow");
+    editor.createShapes([
+      { id: a, type: "paper", x: 0, y: 0 },
+      { id: b, type: "paper", x: 500, y: 0 },
+      { id: arrow, type: "arrow", x: 150, y: 190 },
+    ]);
+    const bind = (to: typeof a, terminal: "start" | "end") => ({
+      type: "arrow" as const,
+      fromId: arrow,
+      toId: to,
+      props: { terminal, normalizedAnchor: { x: 0.5, y: 0.5 }, isExact: false, isPrecise: false, snap: "none" as const },
+    });
+    editor.createBindings([bind(a, "start"), bind(b, "end")]);
+    toggleGlue(editor, [editor.getShape(b)!]);
+    const o = order(editor);
+    expect(o.indexOf(arrow)).toBeGreaterThan(o.indexOf(a));
+    expect(o.indexOf(arrow)).toBeGreaterThan(o.indexOf(b));
+  });
+
+  it("undoes the glue and the new order together", () => {
+    const editor = makeEditor();
+    const a = createShapeId("a");
+    const b = createShapeId("b");
+    editor.createShapes([
+      { id: a, type: "paper", x: 0, y: 0 },
+      { id: b, type: "paper", x: 400, y: 0 },
+    ]);
+    const before = order(editor);
+    toggleGlue(editor, [editor.getShape(b)!]);
+    editor.undo();
+    expect(order(editor)).toEqual(before);
+    expect((editor.getShape(b) as any).meta.glued).toBeFalsy();
   });
 });

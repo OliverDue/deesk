@@ -1,5 +1,6 @@
 import { TldrawUiButton, TldrawUiButtonIcon, useEditor, useValue } from "tldraw";
-import { isGlued, nextGlueValue } from "../../rules/glue";
+import { isGlued } from "../../rules/glue";
+import { toggleGlue } from "./glueAction";
 import { PAPER_TYPE } from "./paperTypes";
 
 // Glues or unglues the selected papers. Shown only while a paper is selected.
@@ -18,11 +19,7 @@ export function GlueButton() {
 
   const toggle = () => {
     const papers = editor.getSelectedShapes().filter((s) => s.type === PAPER_TYPE);
-    const glued = nextGlueValue(papers);
-    editor.markHistoryStoppingPoint("glue");
-    editor.updateShapes(
-      papers.map((p) => ({ id: p.id, type: PAPER_TYPE, meta: { ...p.meta, glued } })),
-    );
+    toggleGlue(editor, papers);
   };
 
   return (

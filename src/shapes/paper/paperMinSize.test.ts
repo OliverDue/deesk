@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { boundsInParent, contentMinSize } from "./paperMinSize";
+import { boundsInParent, clampToSheet, contentMinSize } from "./paperMinSize";
 
 describe("boundsInParent", () => {
   it("moves a shape's bounds by its position", () => {
@@ -51,5 +51,19 @@ describe("contentMinSize", () => {
 
   it("ignores a figure that lies wholly left of or above the paper", () => {
     expect(contentMinSize([{ x: -50, y: -50, w: 30, h: 30 }], min)).toEqual(min);
+  });
+});
+
+describe("clampToSheet", () => {
+  const sheet = { w: 300, h: 380 };
+
+  it("leaves a figure that lies inside the sheet as it is", () => {
+    expect(clampToSheet({ x: 10, y: 10, w: 28, h: 28 }, sheet)).toEqual({ x: 10, y: 10, w: 28, h: 28 });
+  });
+
+  it("cuts an overhanging figure at the sheet's edge, so it does not force the paper bigger", () => {
+    const out = clampToSheet({ x: 290, y: 370, w: 28, h: 28 }, sheet);
+    expect(out.x + out.w).toBe(300);
+    expect(out.y + out.h).toBe(380);
   });
 });

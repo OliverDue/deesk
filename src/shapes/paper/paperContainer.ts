@@ -16,6 +16,12 @@ export function paperClips(type: string): boolean {
   return !UNCLIPPED_TYPES.has(type);
 }
 
+// Whether the paper may not be resized so small that this figure leaves it: every clipped
+// figure, and stickers too (they may overhang, but must not be sized away from).
+export function paperKeepsInside(type: string): boolean {
+  return paperClips(type) || type === "sticker";
+}
+
 // The paper's rectangle in its own coordinates, clockwise from the top-left corner.
 export function paperClipRect(w: number, h: number): { x: number; y: number }[] {
   return [

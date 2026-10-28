@@ -46,3 +46,14 @@ export function contentMinSize(
   }
   return { w, h };
 }
+
+// The part of a figure that lies within the sheet (cut at its right and bottom edge). A
+// figure that already overhangs then asks for no more than the paper's current size, so
+// resizing never makes the paper jump bigger.
+export function clampToSheet(figure: Bounds, sheet: { w: number; h: number }): Bounds {
+  return {
+    ...figure,
+    w: Math.max(0, Math.min(figure.x + figure.w, sheet.w) - figure.x),
+    h: Math.max(0, Math.min(figure.y + figure.h, sheet.h) - figure.y),
+  };
+}

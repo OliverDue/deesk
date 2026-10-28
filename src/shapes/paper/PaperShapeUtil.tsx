@@ -16,8 +16,8 @@ import {
 import { guardGlued, isGlued, withoutGlue } from "../../rules/glue";
 import { placeCaretAtPointer } from "../../text/placeCaret";
 import { checkboxIndexAt, toggleTaskItem } from "../../text/taskItems";
-import { paperAccepts, paperClipRect, paperClips } from "./paperContainer";
-import { boundsInParent, contentMinSize } from "./paperMinSize";
+import { paperAccepts, paperClipRect, paperClips, paperKeepsInside } from "./paperContainer";
+import { boundsInParent, clampToSheet, contentMinSize } from "./paperMinSize";
 import {
   PAPER_DEFAULT_HEIGHT,
   PAPER_DEFAULT_WIDTH,
@@ -158,13 +158,15 @@ export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
     const figures = this.editor
       .getSortedChildIdsForParent(shape.id)
       .map((id) => this.editor.getShape(id))
-      .filter((child): child is TLShape => !!child && paperClips(child.type))
+      .filter((child): child is TLShape => !!child && paperKeepsInside(child.type))
       .map((child) => {
         const b = this.editor.getShapeGeometry(child).bounds;
-        return boundsInParent(
+        const inParent = boundsInParent(
           { x: b.x, y: b.y, w: b.w, h: b.h },
           { x: child.x, y: child.y, rotation: child.rotation },
         );
+        // A figure that may overhang (a sticker) asks only for the part already on the sheet.
+        return paperClips(child.type) ? inParent : clampToSheet(inParent, shape.props);
       });
     const min = contentMinSize(figures, { w: PAPER_MIN_WIDTH, h: PAPER_MIN_HEIGHT });
     return resizeBox(shape, info, { minWidth: min.w, minHeight: min.h });
