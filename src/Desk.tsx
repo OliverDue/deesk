@@ -10,7 +10,8 @@ import {
   uiComponents,
   uiOverrides,
 } from "./shapes/registry";
-import { TypeToEdit } from "./text/TypeToEditListener";
+import { PasteOffset } from "./shapes/PasteOffsetHandler";
+import { TypeToEditListener } from "./text/TypeToEditListener";
 import { deeskExtensions } from "./text/textOptions";
 
 const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY as string | undefined;
@@ -35,7 +36,8 @@ export function Desk() {
         }}
       >
         <ZoomSpring />
-        <TypeToEdit />
+        <TypeToEditListener />
+        <PasteOffset />
       </Tldraw>
     </div>
   );

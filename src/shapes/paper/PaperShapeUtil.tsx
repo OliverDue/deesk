@@ -4,6 +4,7 @@ import {
   resizeBox,
   RichTextLabel,
   richTextValidator,
+  startEditingShapeWithRichText,
   T,
   toRichText,
   useValue,
@@ -33,6 +34,14 @@ export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
 
   override canEdit() {
     return true;
+  }
+
+  // tldraw's own double-click handling selects all the text when editing starts. Start
+  // editing here instead, so the cursor lands at the end of the text. Returning a change
+  // tells tldraw the double click was handled, so it skips its own path.
+  override onDoubleClick(shape: PaperShape) {
+    startEditingShapeWithRichText(this.editor, shape);
+    return { id: shape.id, type: PAPER_TYPE } as const;
   }
 
   // Only the frame changes on resize. The text is laid out at a fixed size, so it can

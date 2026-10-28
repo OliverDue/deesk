@@ -35,6 +35,7 @@
 - No progress indicator on checklists.
 - Looping self-similar zoom is out of scope.
 - A packaged app counts as tldraw "production" and needs a licence key (hobby key requested by the user). Development needs none.
+- **Never give two files names that differ only by capital letters** (for example `pasteOffset.ts` and `PasteOffset.tsx`): macOS treats them as the same file and TypeScript fails. Component files get a different word, such as `...Handler.tsx` or `...Listener.tsx`.
 - Project root: `/Users/oliverduenielsen/deesk` (git repo, branch `master`). Commit after every task.
 - Commit messages carry **no** attribution or Co-Authored-By trailer (user instruction, 2026-10-28), and commits are authored as lio@live.dk through the repo-local git config.
 
@@ -1743,7 +1744,7 @@ Fix anything the hand test found (with a test where the problem can be tested wi
 - Produces:
   - `paperTypes.ts`: paper props become `{ w: number; h: number; richText: TLRichText }`; new constants `PAPER_LINE_HEIGHT` (1.5), `PAPER_PADDING_PX` (16), `PAPER_TEXT_COLOR` (`#2b2b2b`), `PAPER_FONT_FAMILY` (`system-ui, sans-serif`).
   - `typeToEdit.ts`: `isTypeToEditKey(e: KeyInfo): boolean` where `KeyInfo = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; isComposing: boolean }`.
-  - `TypeToEditListener.tsx`: `TypeToEdit(): null`, a component rendered inside `<Tldraw>` that starts editing the selected paper when the user starts typing.
+  - `TypeToEditListener.tsx`: `TypeToEditListener(): null`, a component rendered inside `<Tldraw>` that starts editing the selected paper when the user starts typing.
   - `textOptions.ts`: `deeskExtensions` (the TipTap extension list: tldraw's defaults without Typography); Task 9 adds the checklist extensions here.
 
 - [ ] **Step 1: Write the failing tests**
@@ -2113,7 +2114,7 @@ New pure logic, tested first:
 Wiring:
 - `PaperShapeUtil.onDoubleClick(shape)` starts editing without select-all and returns an empty change `{ id, type }`, which tells tldraw the double click was handled so it skips its own select-all path.
 - `TypeToEditListener.tsx`: Enter on a selected paper starts editing without select-all; plain typing starts writing only if `isBlankRichText`; the first character is inserted after `focus('end')`.
-- `src/shapes/PasteOffset.tsx`: registers a `tldraw` external content handler that calls `defaultHandleExternalTldrawContent`, then, when no explicit paste point was given and new shapes were selected by the paste, moves exactly those new shapes by `pasteOffset(counter.next(rootShapeIds.join(",")))`. Shapes that were already selected before the paste are never moved.
+- `src/shapes/PasteOffsetHandler.tsx` (exports `PasteOffset`): registers a `tldraw` external content handler that calls `defaultHandleExternalTldrawContent`, then, when no explicit paste point was given and new shapes were selected by the paste, moves exactly those new shapes by `pasteOffset(counter.next(rootShapeIds.join(",")))`. Shapes that were already selected before the paste are never moved.
 
 Hand re-test: (a) double-click and Enter put the cursor at the end, with nothing selected; (b) typing on a blank selected paper writes at the start and stays there; (c) typing on a paper with text does nothing; (d) Enter and double-click still edit a paper with text, at the end; (e) copy and paste a paper: the copy appears down and right, and a second paste steps further; (f) the other Task 8 hand checks that are still unreported.
 
