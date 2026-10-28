@@ -1383,10 +1383,341 @@ Adjust the constants in `src/camera/springConfig.ts` with the user until it feel
 
 ### Task 7: Paper shape (frame, fixed text size)
 
-- **Goal:** a custom tldraw shape for a paper that can be created, moved, resized and styled (colour, size).
-- **Files:** `src/shapes/paper/PaperShapeUtil.tsx`, `src/shapes/paper/paper-types.ts`, registration in `src/Desk.tsx`, tests for the shape's resize behaviour.
-- **Interfaces:** shape type `"paper"` with props `{ w: number; h: number; color: string; body: "text" | "checklist" }`. Resizing only changes `w` and `h`.
-- **Acceptance:** drag-resizing a paper never changes text size. Text reflows or clips.
+**Goal:** a "paper": a sheet on the desk that can be created, moved, rotated, resized, stacked and saved. **Resizing never scales its text.** Text shows as a fixed-size placeholder for now; real editing comes in Task 8.
+
+**Design decisions (proposed, to be confirmed by the user)**
+- **Creating a paper:** a toolbar button (leftmost, a small page icon) and the keyboard key **P**. After choosing it, one click on the desk drops a paper centred on the click, selects it, and returns to the normal select tool. Check in tldraw's keyboard shortcuts dialog that `p` is free; if it clashes, pick a free key.
+- **Size:** a new paper is 300 × 380 (portrait, like a sheet). It can be resized down to 120 × 120.
+- **Look:** a warm off-white sheet (`#FFFDF5`) with a thin border and a soft shadow, so it reads as paper on the cream table. Rotation uses tldraw's built-in rotate handle.
+- **Colours** are left out of this task (Task 7b), so this task has one paper colour.
+- **How text stays fixed:** a paper's saved props are only `w` and `h`. Text is ordinary HTML at a fixed 16 px, so changing `w` and `h` can only reflow or clip it. A test guards that the props never gain a font size or scale.
+- **The desk store must know the shape.** `createTLStore()` in `useDeskStore.ts` is created outside the editor, so it needs `shapeUtils` too; otherwise a saved desk containing papers cannot load. (Consequence to remember: once papers are saved, an older build without the paper shape cannot open that desk.)
+
+**Files:**
+- Create: `src/shapes/paper/paperTypes.ts`, `src/shapes/paper/paperPlacement.ts`, `src/shapes/paper/paper.test.ts`
+- Create: `src/shapes/paper/PaperShapeUtil.tsx`, `src/shapes/paper/PaperTool.ts`
+- Create: `src/shapes/registry.tsx`, `public/paper-icon.svg`
+- Modify: `src/Desk.tsx`, `src/persistence/useDeskStore.ts`, `src/index.css`
+
+**Interfaces:**
+- Consumes: `Desk` and `useDeskStore` from Tasks 5 and 6; tldraw's `BaseBoxShapeUtil`, `HTMLContainer`, `StateNode`, `T`, `createShapeId`, `resizeBox`, `DefaultToolbar`, `DefaultToolbarContent`, `TldrawUiMenuItem`, `useTools`, `useIsToolSelected`.
+- Produces:
+  - `paperTypes.ts`: `PAPER_TYPE = "paper"`, `type PaperShape`, constants `PAPER_DEFAULT_WIDTH` (300), `PAPER_DEFAULT_HEIGHT` (380), `PAPER_MIN_WIDTH` (120), `PAPER_MIN_HEIGHT` (120), `PAPER_FONT_SIZE_PX` (16).
+  - `paperPlacement.ts`: `paperPlacement(centre: { x: number; y: number }): { x: number; y: number }` (top-left for a default-size paper centred on `centre`).
+  - `PaperShapeUtil.tsx`: `class PaperShapeUtil` with `static props = { w, h }`.
+  - `PaperTool.ts`: `class PaperTool extends StateNode`, `PAPER_TOOL_ID = "paper"`.
+  - `registry.tsx`: `shapeUtils`, `customTools`, `uiOverrides`, `uiComponents`, `assetUrls`, one place that lists everything Deesk adds to tldraw. Later shapes (stickers, pins) are added here.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `src/shapes/paper/paper.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { paperPlacement } from "./paperPlacement";
+import {
+  PAPER_DEFAULT_HEIGHT,
+  PAPER_DEFAULT_WIDTH,
+  PAPER_MIN_HEIGHT,
+  PAPER_MIN_WIDTH,
+} from "./paperTypes";
+import { PaperShapeUtil } from "./PaperShapeUtil";
+
+describe("paperPlacement", () => {
+  it("centres a new paper on the click point", () => {
+    expect(paperPlacement({ x: 500, y: 400 })).toEqual({
+      x: 500 - PAPER_DEFAULT_WIDTH / 2,
+      y: 400 - PAPER_DEFAULT_HEIGHT / 2,
+    });
+  });
+
+  it("works at negative page coordinates", () => {
+    expect(paperPlacement({ x: -1000, y: -2000 })).toEqual({
+      x: -1000 - PAPER_DEFAULT_WIDTH / 2,
+      y: -2000 - PAPER_DEFAULT_HEIGHT / 2,
+    });
+  });
+});
+
+describe("paper size rules", () => {
+  it("has a minimum size below the default size", () => {
+    expect(PAPER_MIN_WIDTH).toBeLessThan(PAPER_DEFAULT_WIDTH);
+    expect(PAPER_MIN_HEIGHT).toBeLessThan(PAPER_DEFAULT_HEIGHT);
+  });
+});
+
+describe("PaperShapeUtil", () => {
+  it("stores only a width and a height, so resizing can never scale text", () => {
+    expect(Object.keys(PaperShapeUtil.props).sort()).toEqual(["h", "w"]);
+  });
+
+  it("starts at the default size", () => {
+    const props = new (PaperShapeUtil as never as new (editor: unknown) => PaperShapeUtil)({}).getDefaultProps();
+    expect(props).toEqual({ w: PAPER_DEFAULT_WIDTH, h: PAPER_DEFAULT_HEIGHT });
+  });
+});
+```
+
+If constructing the util without an editor throws in the last test, replace that test with one that checks the defaults through an exported constant `PAPER_DEFAULT_PROPS` (add it to `paperTypes.ts` and use it in `getDefaultProps`). If importing tldraw inside Vitest's jsdom environment fails, note the error in Findings and keep the first three tests, relying on Step 9 for the rest.
+
+- [ ] **Step 2: Run to see it fail**
+
+Run: `npm test`. Expected: FAIL, because `./paperPlacement`, `./paperTypes` and `./PaperShapeUtil` cannot be resolved.
+
+- [ ] **Step 3: Types, constants and placement**
+
+Create `src/shapes/paper/paperTypes.ts`:
+
+```ts
+import type { TLShape } from "tldraw";
+
+export const PAPER_TYPE = "paper";
+
+declare module "tldraw" {
+  export interface TLGlobalShapePropsMap {
+    [PAPER_TYPE]: { w: number; h: number };
+  }
+}
+
+export type PaperShape = TLShape<typeof PAPER_TYPE>;
+
+export const PAPER_DEFAULT_WIDTH = 300;
+export const PAPER_DEFAULT_HEIGHT = 380;
+export const PAPER_MIN_WIDTH = 120;
+export const PAPER_MIN_HEIGHT = 120;
+export const PAPER_FONT_SIZE_PX = 16;
+```
+
+Create `src/shapes/paper/paperPlacement.ts`:
+
+```ts
+import { PAPER_DEFAULT_HEIGHT, PAPER_DEFAULT_WIDTH } from "./paperTypes";
+
+// Top-left corner for a new default-size paper centred on `centre`.
+export function paperPlacement(centre: { x: number; y: number }): { x: number; y: number } {
+  return {
+    x: centre.x - PAPER_DEFAULT_WIDTH / 2,
+    y: centre.y - PAPER_DEFAULT_HEIGHT / 2,
+  };
+}
+```
+
+- [ ] **Step 4: The shape**
+
+Create `src/shapes/paper/PaperShapeUtil.tsx`. Check the installed types for `BaseBoxShapeUtil`, `resizeBox` (in particular whether it accepts `minWidth`/`minHeight` options) and `getIndicatorPath`, and adjust if they differ.
+
+```tsx
+import { BaseBoxShapeUtil, HTMLContainer, resizeBox, T, type TLResizeInfo } from "tldraw";
+import {
+  PAPER_DEFAULT_HEIGHT,
+  PAPER_DEFAULT_WIDTH,
+  PAPER_MIN_HEIGHT,
+  PAPER_MIN_WIDTH,
+  PAPER_TYPE,
+  type PaperShape,
+} from "./paperTypes";
+
+export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
+  static override type = PAPER_TYPE;
+  static override props = { w: T.number, h: T.number };
+
+  getDefaultProps(): PaperShape["props"] {
+    return { w: PAPER_DEFAULT_WIDTH, h: PAPER_DEFAULT_HEIGHT };
+  }
+
+  // Only the frame changes on resize. Text is plain HTML at a fixed size, so it can
+  // reflow or be clipped, but it can never scale.
+  override onResize(shape: PaperShape, info: TLResizeInfo<PaperShape>) {
+    return resizeBox(shape, info, { minWidth: PAPER_MIN_WIDTH, minHeight: PAPER_MIN_HEIGHT });
+  }
+
+  component(shape: PaperShape) {
+    return (
+      <HTMLContainer>
+        <div className="paper" style={{ width: shape.props.w, height: shape.props.h }}>
+          <p className="paper-text">Resize me. This text keeps its size.</p>
+        </div>
+      </HTMLContainer>
+    );
+  }
+
+  getIndicatorPath(shape: PaperShape) {
+    const path = new Path2D();
+    path.rect(0, 0, shape.props.w, shape.props.h);
+    return path;
+  }
+}
+```
+
+Add to `src/index.css`:
+
+```css
+.paper {
+  box-sizing: border-box;
+  padding: 16px;
+  overflow: hidden;
+  background: #fffdf5;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 2px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.12),
+    0 6px 14px rgba(0, 0, 0, 0.1);
+  color: #2b2b2b;
+}
+
+.paper-text {
+  margin: 0;
+  font: 16px/1.5 system-ui, sans-serif;
+}
+```
+
+If `PaperShapeUtil` hard-codes the font size in CSS, keep `PAPER_FONT_SIZE_PX` as the documented value (16) and make sure the two agree.
+
+- [ ] **Step 5: Run the tests, then commit**
+
+Run: `npm test`. Expected: PASS (all earlier tests plus these). Then:
+
+```bash
+git add src/shapes src/index.css
+git commit -m "feat: paper shape with a fixed-size text area"
+```
+
+- [ ] **Step 6: The tool that creates a paper**
+
+Create `src/shapes/paper/PaperTool.ts`:
+
+```ts
+import { StateNode, createShapeId } from "tldraw";
+import { paperPlacement } from "./paperPlacement";
+import { PAPER_TYPE } from "./paperTypes";
+
+export const PAPER_TOOL_ID = "paper";
+
+// One click on the desk drops a paper centred on the click, then returns to select.
+export class PaperTool extends StateNode {
+  static override id = PAPER_TOOL_ID;
+
+  override onPointerDown() {
+    const { x, y } = paperPlacement(this.editor.inputs.getCurrentPagePoint());
+    const id = createShapeId();
+    this.editor.createShape({ id, type: PAPER_TYPE, x, y });
+    this.editor.select(id);
+    this.editor.setCurrentTool("select");
+  }
+}
+```
+
+- [ ] **Step 7: Register everything in one place**
+
+Create `public/paper-icon.svg` (a simple page outline; tldraw colours icons itself):
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z M15 3v4h4" fill="none" stroke="black" stroke-width="1.5" stroke-linejoin="round"/></svg>
+```
+
+Create `src/shapes/registry.tsx`. This follows tldraw's documented "add a tool to the toolbar" pattern; check names against the installed types.
+
+```tsx
+import {
+  DefaultToolbar,
+  DefaultToolbarContent,
+  TldrawUiMenuItem,
+  useIsToolSelected,
+  useTools,
+  type TLComponents,
+  type TLUiAssetUrlOverrides,
+  type TLUiOverrides,
+} from "tldraw";
+import { PAPER_TOOL_ID, PaperTool } from "./paper/PaperTool";
+import { PaperShapeUtil } from "./paper/PaperShapeUtil";
+
+// Everything Deesk adds to tldraw is listed here. Later shapes are added to these lists.
+export const shapeUtils = [PaperShapeUtil];
+export const customTools = [PaperTool];
+
+export const uiOverrides: TLUiOverrides = {
+  tools(editor, tools) {
+    tools[PAPER_TOOL_ID] = {
+      id: PAPER_TOOL_ID,
+      icon: "paper-icon",
+      label: "Paper",
+      kbd: "p",
+      onSelect: () => editor.setCurrentTool(PAPER_TOOL_ID),
+    };
+    return tools;
+  },
+};
+
+export const uiComponents: TLComponents = {
+  Toolbar: (props) => {
+    const tools = useTools();
+    const paperSelected = useIsToolSelected(tools[PAPER_TOOL_ID]);
+    return (
+      <DefaultToolbar {...props}>
+        <TldrawUiMenuItem {...tools[PAPER_TOOL_ID]} isSelected={paperSelected} />
+        <DefaultToolbarContent />
+      </DefaultToolbar>
+    );
+  },
+};
+
+export const assetUrls: TLUiAssetUrlOverrides = {
+  icons: { "paper-icon": "/paper-icon.svg" },
+};
+```
+
+- [ ] **Step 8: Wire it into the desk and the store**
+
+In `src/persistence/useDeskStore.ts`, import `shapeUtils` from `../shapes/registry` and change `createTLStore()` to `createTLStore({ shapeUtils })`.
+
+In `src/Desk.tsx`, import `assetUrls`, `customTools`, `shapeUtils`, `uiComponents`, `uiOverrides` from `./shapes/registry` and pass them to `<Tldraw>`:
+
+```tsx
+<Tldraw
+  store={store}
+  shapeUtils={shapeUtils}
+  tools={customTools}
+  overrides={uiOverrides}
+  components={uiComponents}
+  assetUrls={assetUrls}
+  colorScheme="light"
+  licenseKey={licenseKey || undefined}
+  options={{ camera: { zoomSteps: ZOOM_STEPS } }}
+>
+  <ZoomSpring />
+</Tldraw>
+```
+
+Run: `npm run build && npm test`. Expected: both pass. Commit:
+
+```bash
+git add -A
+git commit -m "feat: create papers from a toolbar button or the P key"
+```
+
+- [ ] **Step 9: User verifies by hand (agent starts `npm run tauri dev`)**
+
+Give the user this list and wait for answers:
+1. **Creating.** A page-icon button appears in the toolbar. Press it (or press **P**) and click on the desk. A paper appears centred on the click, selected, and the tool goes back to select. Does the key clash with another tldraw shortcut?
+2. **Moving and rotating.** Drag the paper. Use the rotate handle. It behaves like any shape.
+3. **Resizing, the hard requirement.** Drag every handle (all four corners and all four edges): make it very wide, very narrow, very tall, very short. **The text must stay exactly the same size**, only reflowing or being cut off at the edge. It cannot shrink below about 120 × 120. When pulling the left or top edge, the opposite edge must not move.
+4. **Zoom.** Zoom in and out. The text scales with the zoom like everything else, and stays sharp.
+5. **Saving.** Create two papers, resize one, close with the red button, reopen. Both are there at the same position and size, and your earlier drawings are still there too.
+6. **Undo and redo** (Cmd+Z, Cmd+Shift+Z): creating, moving and resizing a paper all undo and redo correctly.
+7. **Arrows.** Draw an arrow from a rectangle to a paper. Move the paper: the arrow stays attached and follows it.
+8. **Stacking.** Drag one paper over another. The later-created paper is on top. Cmd+] and Cmd+[ change the order.
+9. **Delete and copy.** Delete a paper. Copy and paste one (Cmd+C, Cmd+V). The copy appears with the same size.
+10. **Dark mode** is still cream, and the paper still looks like paper.
+
+- [ ] **Step 10: Commit and ask for confirmation**
+
+Fix anything the hand test found (with a test where the problem can be tested without the canvas), commit, tick this task in the plan, record findings, and ask the user for explicit confirmation that Task 7 is done before starting Task 8.
+
+### Task 7b: Paper colours
+
+- **Goal:** choose a paper's colour from a small set of paper-like colours.
+- **Files:** `src/shapes/paper/paperTypes.ts` (add a `color` prop with a migration for existing papers), `PaperShapeUtil.tsx`, a small colour picker UI, tests for the colour list and migration.
+- **Note:** deferred out of Task 7 so the paper itself could be verified first. Expand into steps before building.
 
 ### Task 8: Text body with markdown headers and bold
 
