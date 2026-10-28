@@ -16,6 +16,7 @@ import {
 import { placeCaretAtPointer } from "../../text/placeCaret";
 import { checkboxIndexAt, toggleTaskItem } from "../../text/taskItems";
 import { paperAccepts, paperClipRect, paperClips } from "./paperContainer";
+import { boundsInParent, contentMinSize } from "./paperMinSize";
 import {
   PAPER_DEFAULT_HEIGHT,
   PAPER_DEFAULT_WIDTH,
@@ -133,7 +134,21 @@ export class PaperShapeUtil extends BaseBoxShapeUtil<PaperShape> {
   // Only the frame changes on resize. The text is laid out at a fixed size, so it can
   // reflow or be clipped, but it can never scale.
   override onResize(shape: PaperShape, info: TLResizeInfo<PaperShape>) {
-    return resizeBox(shape, info, { minWidth: PAPER_MIN_WIDTH, minHeight: PAPER_MIN_HEIGHT });
+    // A paper cannot be made smaller than its figures: it stops at the farthest right and
+    // bottom edge of the figures that would otherwise be cut off.
+    const figures = this.editor
+      .getSortedChildIdsForParent(shape.id)
+      .map((id) => this.editor.getShape(id))
+      .filter((child): child is TLShape => !!child && paperClips(child.type))
+      .map((child) => {
+        const b = this.editor.getShapeGeometry(child).bounds;
+        return boundsInParent(
+          { x: b.x, y: b.y, w: b.w, h: b.h },
+          { x: child.x, y: child.y, rotation: child.rotation },
+        );
+      });
+    const min = contentMinSize(figures, { w: PAPER_MIN_WIDTH, h: PAPER_MIN_HEIGHT });
+    return resizeBox(shape, info, { minWidth: min.w, minHeight: min.h });
   }
 
   component(shape: PaperShape) {

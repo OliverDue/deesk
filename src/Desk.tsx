@@ -10,6 +10,7 @@ import {
   uiComponents,
   uiOverrides,
 } from "./shapes/registry";
+import { EditorTweaks } from "./shapes/EditorTweaksInstaller";
 import { PasteOffset } from "./shapes/PasteOffsetHandler";
 import { ChecklistShortcut } from "./text/ChecklistControls";
 import { TypeToEditListener } from "./text/TypeToEditListener";
@@ -40,6 +41,7 @@ export function Desk() {
         <TypeToEditListener />
         <ChecklistShortcut />
         <PasteOffset />
+        <EditorTweaks />
       </Tldraw>
     </div>
   );
