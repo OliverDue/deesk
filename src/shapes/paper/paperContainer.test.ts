@@ -20,13 +20,18 @@ describe("paperAccepts", () => {
 
 describe("paperClips", () => {
   it("clips figures at the paper's edge", () => {
-    for (const type of ["geo", "draw", "line", "text", "note", "image"]) {
+    for (const type of ["geo", "line", "text", "note", "image"]) {
       expect(paperClips(type)).toBe(true);
     }
   });
 
-  it("lets arrows leave the paper, so connectors can reach other papers", () => {
+  it("lets arrows run past the edge, so connectors can reach other papers", () => {
     expect(paperClips("arrow")).toBe(false);
+  });
+
+  it("lets freehand strokes run past the edge too, while staying part of the paper", () => {
+    expect(paperClips("draw")).toBe(false);
+    expect(paperClips("highlight")).toBe(false);
   });
 });
 

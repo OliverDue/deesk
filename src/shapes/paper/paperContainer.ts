@@ -6,10 +6,14 @@ export function paperAccepts(type: string, isLocked: boolean): boolean {
   return !isLocked && type !== PAPER_TYPE;
 }
 
-// Whether a figure is cut off at the paper's edge. Arrows are not, so a connector can run
-// from a paper to something outside it (tldraw's own rule for frames).
+// Figure types that are not cut off at the paper's edge. Arrows can run from a paper to
+// something outside it (tldraw's own rule for frames), and a freehand stroke can run past
+// the edge while still belonging to the paper.
+const UNCLIPPED_TYPES = new Set(["arrow", "draw", "highlight"]);
+
+// Whether a figure is cut off at the paper's edge.
 export function paperClips(type: string): boolean {
-  return type !== "arrow";
+  return !UNCLIPPED_TYPES.has(type);
 }
 
 // The paper's rectangle in its own coordinates, clockwise from the top-left corner.
