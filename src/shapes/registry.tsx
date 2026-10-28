@@ -3,7 +3,33 @@ import {
   DefaultStylePanel,
   DefaultStylePanelContent,
   DefaultToolbar,
-  DefaultToolbarContent,
+  ArrowDownToolbarItem,
+  ArrowLeftToolbarItem,
+  ArrowRightToolbarItem,
+  ArrowToolbarItem,
+  ArrowUpToolbarItem,
+  AssetToolbarItem,
+  CheckBoxToolbarItem,
+  CloudToolbarItem,
+  DiamondToolbarItem,
+  DrawToolbarItem,
+  EllipseToolbarItem,
+  EraserToolbarItem,
+  FrameToolbarItem,
+  HeartToolbarItem,
+  HexagonToolbarItem,
+  HighlightToolbarItem,
+  LaserToolbarItem,
+  LineToolbarItem,
+  NoteToolbarItem,
+  OvalToolbarItem,
+  RectangleToolbarItem,
+  RhombusToolbarItem,
+  SelectToolbarItem,
+  StarToolbarItem,
+  TextToolbarItem,
+  TriangleToolbarItem,
+  XBoxToolbarItem,
   TldrawUiMenuItem,
   useIsToolSelected,
   useTools,
@@ -63,15 +89,43 @@ export const uiComponents: TLComponents = {
       </StylePanelSection>
     </DefaultStylePanel>
   ),
+  // Select first, then our two tools, then tldraw's own, without the hand tool (the hand is
+  // still available by holding space).
   Toolbar: (props) => {
     const tools = useTools();
     const paperSelected = useIsToolSelected(tools[PAPER_TOOL_ID]);
     const stickerSelected = useIsToolSelected(tools[STICKER_TOOL_ID]);
     return (
       <DefaultToolbar {...props}>
+        <SelectToolbarItem />
         <TldrawUiMenuItem {...tools[PAPER_TOOL_ID]} isSelected={paperSelected} />
         <TldrawUiMenuItem {...tools[STICKER_TOOL_ID]} isSelected={stickerSelected} />
-        <DefaultToolbarContent />
+        <DrawToolbarItem />
+        <EraserToolbarItem />
+        <ArrowToolbarItem />
+        <TextToolbarItem />
+        <NoteToolbarItem />
+        <AssetToolbarItem />
+        <RectangleToolbarItem />
+        <EllipseToolbarItem />
+        <TriangleToolbarItem />
+        <DiamondToolbarItem />
+        <HexagonToolbarItem />
+        <OvalToolbarItem />
+        <RhombusToolbarItem />
+        <StarToolbarItem />
+        <CloudToolbarItem />
+        <HeartToolbarItem />
+        <XBoxToolbarItem />
+        <CheckBoxToolbarItem />
+        <ArrowLeftToolbarItem />
+        <ArrowUpToolbarItem />
+        <ArrowDownToolbarItem />
+        <ArrowRightToolbarItem />
+        <LineToolbarItem />
+        <HighlightToolbarItem />
+        <LaserToolbarItem />
+        <FrameToolbarItem />
       </DefaultToolbar>
     );
   },

@@ -21,7 +21,7 @@ export function StickerColorPicker() {
   };
 
   return (
-    <div style={{ display: "flex", gap: 2, padding: 4, pointerEvents: "all" }}>
+    <div data-sticker-colors style={{ display: "flex", gap: 2, padding: 4, pointerEvents: "all" }}>
       {STICKER_COLORS.map((c) => (
         <TldrawUiButton
           key={c.key}
@@ -34,6 +34,7 @@ export function StickerColorPicker() {
             style={{
               width: 18,
               height: 18,
+              flexShrink: 0,
               borderRadius: "50%",
               background: c.fill,
               border: `2px solid ${c.rim}`,
