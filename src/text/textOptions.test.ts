@@ -15,6 +15,11 @@ describe("deeskExtensions", () => {
     expect(schema.marks.bold).toBeDefined();
   });
 
+  it("lets a line be a tick-box item, and nests them", () => {
+    expect(schema.nodes.taskList).toBeDefined();
+    expect(schema.nodes.taskItem).toBeDefined();
+  });
+
   it("leaves typed characters exactly as typed", () => {
     expect(deeskExtensions.map((e) => e.name)).not.toContain("typography");
   });
