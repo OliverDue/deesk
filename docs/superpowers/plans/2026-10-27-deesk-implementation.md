@@ -36,7 +36,7 @@
 - Looping self-similar zoom is out of scope.
 - A packaged app counts as tldraw "production" and needs a licence key (hobby key requested by the user). Development needs none.
 - Project root: `/Users/oliverduenielsen/deesk` (git repo, branch `master`). Commit after every task.
-- Commit messages end with the attribution line given in the session's system reminder, when one is present.
+- Commit messages carry **no** attribution or Co-Authored-By trailer (user instruction, 2026-10-28), and commits are authored as lio@live.dk through the repo-local git config.
 
 ## Review Focus
 
