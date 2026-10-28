@@ -1,4 +1,5 @@
 import {
+  defaultShapeUtils,
   DefaultToolbar,
   DefaultToolbarContent,
   TldrawUiMenuItem,
@@ -13,6 +14,10 @@ import { PaperShapeUtil } from "./paper/PaperShapeUtil";
 
 // Everything Deesk adds to tldraw is listed here. Later shapes are added to these lists.
 export const shapeUtils = [PaperShapeUtil];
+
+// The desk store is created outside the editor, so it must list tldraw's own shapes too,
+// not only ours (tldraw merges the two itself only for the <Tldraw shapeUtils> prop).
+export const storeShapeUtils = [...defaultShapeUtils, ...shapeUtils];
 export const customTools = [PaperTool];
 
 export const uiOverrides: TLUiOverrides = {

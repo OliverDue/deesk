@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
-import { createTLStore, getSnapshot, loadSnapshot, type TLStore } from "tldraw";
+import {
+  createTLStore,
+  defaultBindingUtils,
+  getSnapshot,
+  loadSnapshot,
+  type TLStore,
+} from "tldraw";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createAutosaver } from "./autosave";
 import { loadDesk, saveDesk } from "./deskStore";
 import { loadSession, saveSession } from "./sessionStore";
-import { shapeUtils } from "../shapes/registry";
+import { storeShapeUtils } from "../shapes/registry";
 import { ensureDataDir, tauriFileOps } from "./tauriFs";
 
 const SAVE_DELAY_MS = 500;
@@ -29,7 +35,7 @@ export function useDeskStore(): TLStore | null {
         console.warn("Deesk: desk.json was unreadable and has been moved aside; starting empty.");
       }
 
-      const next = createTLStore({ shapeUtils });
+      const next = createTLStore({ shapeUtils: storeShapeUtils, bindingUtils: defaultBindingUtils });
       if (result.kind === "ok" || result.kind === "recovered") {
         loadSnapshot(next, {
           document: result.document as never,
