@@ -41,7 +41,7 @@ A custom shape with a checklist or text body, edited with TipTap.
 - Checklists support nested items, drag to reorder, and check/uncheck. There is no progress indicator.
 - A paper acts as a container: figures drawn on it (boxes, arrows, images) move with it and are clipped to its edge.
 - Style options: colour and size.
-- While a paper is being edited, all other shapes are dimmed. Clicking a paper never moves the camera.
+- Clicking a paper never moves the camera. (Dimming other shapes while editing was dropped by the user on 2026-10-28.)
 
 ### Sticker
 A small circle in a fixed palette of colours. It can sit on the desk or on a paper.

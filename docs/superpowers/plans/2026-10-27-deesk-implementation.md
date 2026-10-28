@@ -16,7 +16,7 @@
 
 **What exists today:** a Tauri 2 + React + tldraw desk (cream `#FFF6D8` table) with an infinite canvas and a zoom spring (Task 6); automatic saving of the desk and the last view (Task 5); **papers** you create with a toolbar button or `P` (Tasks 7–8): movable, resizable, rotatable sheets whose text never scales, written with markdown headers and bold, in a system font; **tick-boxes** added from a button in the style panel or Cmd+Shift+9, ticked by clicking even when the paper is not being edited (Task 9); and papers as **containers for figures** (Task 10): boxes, lines, drawings and arrows drawn on a paper belong to it, arrows connect figures across papers and are cleaned up when their last anchor goes, copies include connecting arrows, and a paper cannot shrink below its figures.
 
-**Next, in this order:** Task 11 (focus dim), 12 (stickers), 13 (glue), 14 (pin), 15 (images), 16 (command palette and search), 17 (themes and export). **Kept for the end, by the user's choice:** Task 18 (fully offline assets), Task 19 (load-failure fallback), the optional Task 7b (paper colours) and Task 9b (reorder tick-boxes), and one action item that is the user's: **get a longer-lived tldraw licence key before the 14-day trial key expires (around 2026-11-10)**. After that the packaged app shows a blank window until a valid key is in `.env.local` and the app is rebuilt; development is unaffected.
+**Dropped by the user (2026-10-28):** Task 11 (focus dim); numbering is kept so the other tasks do not shift. **Next, in this order:** 12 (stickers), 13 (glue), 14 (pin), 15 (images), 16 (command palette and search), 17 (themes and export). **Kept for the end, by the user's choice:** Task 18 (fully offline assets), Task 19 (load-failure fallback), the optional Task 7b (paper colours) and Task 9b (reorder tick-boxes), and one action item that is the user's: **get a longer-lived tldraw licence key before the 14-day trial key expires (around 2026-11-10)**. After that the packaged app shows a blank window until a valid key is in `.env.local` and the app is rebuilt; development is unaffected.
 
 **How to work on this (the loop the user and agent settled into):**
 1. Take the next roadmap task. Check the installed tldraw docs and source first (`node_modules/tldraw/DOCS.md`, and the sources under `node_modules/@tldraw/*/src`); do not rely on memory of the API (this is tldraw 5.5.2).
@@ -2990,12 +2990,8 @@ Give the user this list and wait for answers:
 
 Fix anything the hand test found (with a test wherever it can be tested without the canvas), commit, tick this task in the plan, record findings, and ask the user for explicit confirmation that Task 10 is done before starting Task 11.
 
-### Task 11: Focus dim
-- **Notes from Tasks 7–10 for step-level planning:** the edited paper's own figures (its children) must stay undimmed as well as the paper itself; dimming must not change hit-testing (clicking a dimmed shape should still work and select it); find out how tldraw marks shapes in the DOM (`data-shape-id` on the shape wrappers) and whether an opacity change on a container class is enough, rather than changing shape opacity records (which would be saved). The editing state is `editor.getEditingShapeId()`; read it with `useValue`. Tick-box editing and the checklist button also go through editing, so check they behave. Test the camera claim with the headless editor (`editor.getCamera()` before and after starting to edit).
-
-- **Goal:** while editing a paper, every other shape is dimmed. The camera never moves.
-- **Files:** `src/focus/useFocusDim.ts`, styles. A test asserts the camera is unchanged before and after focusing a paper.
-- **Acceptance:** dim on edit, restored on exit, no camera change.
+### Task 11: Focus dim — DROPPED
+The user decided on 2026-10-28 that they do not want dimming. Nothing to build; the spec line about dimming is no longer wanted either.
 
 ### Task 12: Stickers
 - **Notes:** add the shape util to `shapeUtils` in `src/shapes/registry.tsx` (`storeShapeUtils` picks it up); papers already accept every type except `paper`, so a sticker dropped or drawn on a paper becomes its figure; decide whether stickers are clipped at a paper's edge (`paperClips` in `src/shapes/paper/paperContainer.ts`: arrows and strokes are exempt, everything else is clipped). A toolbar entry follows the `PaperTool` pattern (tool class, `uiOverrides.tools`, `Toolbar` component, icon in `assetUrls.icons`). All text must use the system font (`deeskTheme`). A new shape type is saved in `desk.json`, so an older build cannot open that desk.
