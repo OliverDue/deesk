@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { STICKER_COLORS, STICKER_COLOR_KEYS, STICKER_DEFAULT_COLOR, stickerColor } from "./palette";
 
 describe("sticker palette", () => {
-  it("has the six colours, red first", () => {
-    expect(STICKER_COLOR_KEYS).toEqual(["red", "orange", "yellow", "green", "blue", "purple"]);
+  it("has the six colours, green, yellow and red first", () => {
+    expect(STICKER_COLOR_KEYS).toEqual(["green", "yellow", "red", "orange", "blue", "purple"]);
   });
 
   it("gives every colour a fill and a darker-looking rim as hex values", () => {

@@ -1,8 +1,8 @@
 export const STICKER_COLORS = [
+  { key: "green", fill: "#3fae5a", rim: "#237a3b" },
+  { key: "yellow", fill: "#f5d90a", rim: "#a8920a" },
   { key: "red", fill: "#e5484d", rim: "#a82a2f" },
   { key: "orange", fill: "#f5922b", rim: "#b0640f" },
-  { key: "yellow", fill: "#f5d90a", rim: "#a8920a" },
-  { key: "green", fill: "#3fae5a", rim: "#237a3b" },
   { key: "blue", fill: "#3b82e0", rim: "#245aa6" },
   { key: "purple", fill: "#8e5bd6", rim: "#6137a0" },
 ] as const;
