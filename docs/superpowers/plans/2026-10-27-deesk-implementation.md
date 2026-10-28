@@ -2764,9 +2764,203 @@ Fix anything the hand test found (with a test wherever it can be tested without 
 
 ### Task 10: Figures on papers
 
-- **Goal:** boxes, arrows, freehand and images drawn on a paper become its children: they move with it and are clipped to its edge.
-- **Files:** changes to `PaperShapeUtil` (child handling and clipping), tests for the parent-child behaviour.
-- **Acceptance:** moving or resizing a paper carries its figures; arrows attached between figures stay attached.
+**Goal:** boxes, ellipses, lines, arrows, drawings and text that you draw or drop **on a paper** become part of that paper: they move, rotate and get deleted and copied with it, and are clipped at its edge. (Arrows are the one exception to clipping; see below.)
+
+**How (from the installed tldraw source):**
+- tldraw's `createShapes` already picks a parent for any new shape that has a position: the topmost shape under that point whose `canReceiveNewChildrenOfType(shape, type)` says yes. So once the paper says yes, **drawing a box on a paper needs no extra code**: the box becomes the paper's child. The paper's default answer is no, which is why nothing happens today.
+- For shapes that already exist, tldraw calls `onDragShapesIn` when a dragged shape enters a container, and `onDragShapesOut` when it leaves. A container reparents the shape in `onDragShapesIn` (`editor.reparentShapes`), and back to the page in `onDragShapesOut`.
+- Children are clipped by the container's `getClipPath` (a polygon in the paper's own coordinates) and `shouldClipChild` (which children).
+- Children are saved with the desk like any other shape, with `parentId` pointing at the paper. **No schema change, so no migration.**
+- **Not used on purpose:** tldraw's ready-made `BaseFrameLikeShapeUtil` base class. A "frame-like" shape lets clicks pass through its body (only its title and border select it), which would make a paper impossible to select by clicking its sheet and would break clicking tick-boxes. The paper keeps its current base class (`BaseBoxShapeUtil`), and the container hooks are added by hand, copying the pattern in `BaseFrameLikeShapeUtil.tsx` without `isFrameLike`.
+
+**What it does**
+- **What a paper accepts:** every shape type except another paper (papers never nest; overlapping papers just stack). A paper that is locked accepts nothing and lets nothing leave.
+- **Clipping:** children are cut off at the paper's edge, **except arrows**, so a connector can leave a paper and run to another paper or to the desk (this is tldraw's own rule for frames).
+- **Resizing a paper does not scale or move its figures:** they keep their size and their place relative to the paper's top-left corner (the same rule as the text), and anything beyond the edge is clipped. Pulling the paper back out reveals it again.
+- **Dragging** a shape from the desk onto a paper makes it part of the paper. Dragging a figure off the paper makes it a desk shape again.
+- **Pasting** while a paper is selected puts pasted figures into that paper (tldraw's own rule once the paper accepts them).
+
+**Design decisions (proposed, to be confirmed by the user)**
+- Arrows are not clipped (as above). The alternative is to clip them too, which stops connectors leaving a paper.
+- Figures do not scale when the paper is resized (as above).
+
+**Files:**
+- Create: `src/shapes/paper/paperContainer.ts`, `src/shapes/paper/paperContainer.test.ts`
+- Modify: `src/shapes/paper/PaperShapeUtil.tsx`
+
+**Interfaces:**
+- Consumes: Task 7 and 8's `PaperShapeUtil` and `PAPER_TYPE`; tldraw's `Vec`, `TLShape`, `TLDragShapesOutInfo`, `Editor#reparentShapes`, `Editor#hasAncestor`, `Editor#getCurrentPageId`.
+- Produces:
+  - `paperContainer.ts`: `paperAccepts(type: string, isLocked: boolean): boolean` (false for `"paper"` and when locked); `paperClips(type: string): boolean` (false only for `"arrow"`); `paperClipRect(w: number, h: number): { x: number; y: number }[]` (the four corners of the paper's rectangle, clockwise from the top-left).
+  - `PaperShapeUtil` gains `canReceiveNewChildrenOfType`, `canRemoveChildrenOfType`, `canResizeChildren`, `getClipPath`, `shouldClipChild`, `onDragShapesIn`, `onDragShapesOut`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `src/shapes/paper/paperContainer.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { paperAccepts, paperClipRect, paperClips } from "./paperContainer";
+
+describe("paperAccepts", () => {
+  it("accepts the figure types you draw on a paper", () => {
+    for (const type of ["geo", "arrow", "draw", "line", "highlight", "text", "note", "image"]) {
+      expect(paperAccepts(type, false)).toBe(true);
+    }
+  });
+
+  it("never accepts another paper, so papers do not nest", () => {
+    expect(paperAccepts("paper", false)).toBe(false);
+  });
+
+  it("accepts nothing while locked", () => {
+    expect(paperAccepts("geo", true)).toBe(false);
+    expect(paperAccepts("arrow", true)).toBe(false);
+  });
+});
+
+describe("paperClips", () => {
+  it("clips figures at the paper's edge", () => {
+    for (const type of ["geo", "draw", "line", "text", "note", "image"]) {
+      expect(paperClips(type)).toBe(true);
+    }
+  });
+
+  it("lets arrows leave the paper, so connectors can reach other papers", () => {
+    expect(paperClips("arrow")).toBe(false);
+  });
+});
+
+describe("paperClipRect", () => {
+  it("is the paper's rectangle, clockwise from the top-left corner", () => {
+    expect(paperClipRect(300, 380)).toEqual([
+      { x: 0, y: 0 },
+      { x: 300, y: 0 },
+      { x: 300, y: 380 },
+      { x: 0, y: 380 },
+    ]);
+  });
+
+  it("follows the size, so resizing the paper moves the clip edge", () => {
+    expect(paperClipRect(120, 120)[2]).toEqual({ x: 120, y: 120 });
+  });
+});
+```
+
+- [ ] **Step 2: Run to see them fail**
+
+Run: `npm test`. Expected: FAIL (`./paperContainer` cannot be resolved).
+
+- [ ] **Step 3: The pure rules**
+
+Create `src/shapes/paper/paperContainer.ts`:
+
+```ts
+import { PAPER_TYPE } from "./paperTypes";
+
+// Whether a paper takes a shape of this type as one of its figures. Papers never nest, so
+// overlapping papers just stack; a locked paper accepts nothing.
+export function paperAccepts(type: string, isLocked: boolean): boolean {
+  return !isLocked && type !== PAPER_TYPE;
+}
+
+// Whether a figure is cut off at the paper's edge. Arrows are not, so a connector can run
+// from a paper to something outside it (tldraw's own rule for frames).
+export function paperClips(type: string): boolean {
+  return type !== "arrow";
+}
+
+// The paper's rectangle in its own coordinates, clockwise from the top-left corner.
+export function paperClipRect(w: number, h: number): { x: number; y: number }[] {
+  return [
+    { x: 0, y: 0 },
+    { x: w, y: 0 },
+    { x: w, y: h },
+    { x: 0, y: h },
+  ];
+}
+```
+
+Run `npm test`. Expected: PASS. Commit: `git add src/shapes/paper && git commit -m "feat: paper container rules"`.
+
+- [ ] **Step 4: Make the paper a container**
+
+In `src/shapes/paper/PaperShapeUtil.tsx`, import `Vec`, `type TLDragShapesOutInfo` and `type TLShape` from `tldraw`, and the three rules from `./paperContainer`. Check the installed types for each hook (`ShapeUtil.ts` in `@tldraw/editor`) and adjust if they differ. Add these methods to the class:
+
+```tsx
+  // The paper is a container for figures: boxes, lines, drawings and so on. tldraw makes a
+  // new shape drawn on the paper its child once this says yes.
+  override canReceiveNewChildrenOfType(shape: PaperShape, type: TLShape["type"]) {
+    return paperAccepts(type, shape.isLocked);
+  }
+
+  override canRemoveChildrenOfType(shape: PaperShape, _type: TLShape["type"]) {
+    return !shape.isLocked;
+  }
+
+  // Resizing the paper changes only the sheet. Figures keep their size and their place
+  // relative to its top-left corner, like the text, and are clipped at the new edge.
+  override canResizeChildren() {
+    return false;
+  }
+
+  override getClipPath(shape: PaperShape) {
+    return paperClipRect(shape.props.w, shape.props.h).map(({ x, y }) => new Vec(x, y));
+  }
+
+  override shouldClipChild(child: TLShape) {
+    return paperClips(child.type);
+  }
+
+  // Dragging a shape onto the paper makes it a figure on it.
+  override onDragShapesIn(shape: PaperShape, draggingShapes: TLShape[]) {
+    const incoming = draggingShapes.filter(
+      (s) => paperAccepts(s.type, shape.isLocked) && s.parentId !== shape.id,
+    );
+    if (incoming.length === 0) return;
+    // A shape that contains this paper (for example a group) cannot become its child.
+    if (incoming.some((s) => this.editor.hasAncestor(shape, s.id))) return;
+    this.editor.reparentShapes(incoming, shape.id);
+  }
+
+  // Dragging a figure off the paper makes it a desk shape again, unless it is being dragged
+  // straight onto another container.
+  override onDragShapesOut(shape: PaperShape, draggingShapes: TLShape[], info: TLDragShapesOutInfo) {
+    if (info.nextDraggingOverShapeId) return;
+    const leaving = draggingShapes.filter((s) => s.parentId === shape.id);
+    if (leaving.length === 0) return;
+    this.editor.reparentShapes(leaving, this.editor.getCurrentPageId());
+  }
+```
+
+Run `npm run build && npm test`. Expected: both pass. Commit:
+
+```bash
+git add -A
+git commit -m "feat: figures drawn or dropped on a paper become part of it"
+```
+
+- [ ] **Step 5: User verifies by hand (agent starts `npm run tauri dev`)**
+
+Give the user this list and wait for answers:
+1. **Drawing on a paper.** With the rectangle tool, draw a box on a paper. Move the paper: the box moves with it. Draw a box that sticks out over the paper's edge: the part outside is cut off.
+2. **Other figures.** Do the same with an ellipse, a line, a freehand drawing, a text label and a note.
+3. **An arrow on one paper.** Draw two boxes on a paper and an arrow between them. Move the paper: all three move together and the arrow stays attached.
+4. **An arrow between two papers.** Draw an arrow from a box on paper A to paper B. It runs out of paper A (it is not cut off), and stays attached when you move either paper.
+5. **Dragging in and out.** With the select tool, drag a box from the desk onto a paper: it becomes part of the paper, and moves when the paper moves. Drag a figure off the paper: it becomes a desk shape again and stays put when the paper moves.
+6. **Resizing.** Resize the paper smaller and larger: figures keep their size and their place relative to the top-left corner, anything past the edge is cut off, and making the paper bigger again shows it. Pulling the left or top edge moves the figures with that corner.
+7. **Papers never nest.** Drag one paper over another: they overlap and stack, and neither becomes part of the other.
+8. **Rotating.** Rotate a paper that has figures: they rotate with it and the clipping follows.
+9. **Delete and undo.** Delete a paper with figures: they go too, and Cmd+Z brings everything back.
+10. **Copy and paste.** Copy a paper with figures: the copy has them too. Copy a box, select a paper, paste: the box lands inside the paper.
+11. **Saving.** Close with the red button and reopen: figures are still part of their papers (move a paper to check).
+12. **Nothing else broke.** Text editing and tick-boxes still work on a paper with figures. Clicking a figure selects the figure; clicking the sheet selects the paper. Double-click a figure edits its own label; double-click the sheet edits the paper's text.
+13. **Undo and redo** drawing a figure and dragging one in or out.
+14. **Selecting several papers.** A drag-to-select box over empty desk still selects papers the way it did before.
+
+- [ ] **Step 6: Commit and ask for confirmation**
+
+Fix anything the hand test found (with a test wherever it can be tested without the canvas), commit, tick this task in the plan, record findings, and ask the user for explicit confirmation that Task 10 is done before starting Task 11.
 
 ### Task 11: Focus dim
 
